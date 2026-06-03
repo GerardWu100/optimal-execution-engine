@@ -1,0 +1,18 @@
+[cache]
+# Root directory for tracked raw Parquet inputs used by the offline demo.
+root_dir = "data/raw"
+
+[clickhouse]
+# Optional ClickHouse host used only for cache refresh/enrichment.
+# Leave empty for the default offline demo path.
+host = ""
+# Optional ClickHouse TCP or HTTP port.
+port = 50050
+# Optional ClickHouse username.
+user = ""
+# Optional ClickHouse password.
+password = ""
+# Whether to use TLS for ClickHouse.
+secure = false
+# Whether to verify TLS certificates.
+verify = false

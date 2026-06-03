@@ -1,0 +1,35 @@
+[project]
+name = "optimal-execution-engine"
+version = "0.1.0"
+description = "Interview-ready demo for model-based trade execution."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "clickhouse-connect>=0.8.0",
+  "matplotlib>=3.10.0",
+  "nbconvert>=7.16.0",
+  "nbformat>=5.10.0",
+  "numpy>=2.2.0",
+  "pandas>=2.2.0",
+  "pyarrow>=19.0.0",
+  "pydantic>=2.11.0",
+  "python-dotenv>=1.0.1",
+  "pytest>=8.3.0",
+]
+
+[project.scripts]
+optimal-execution = "optimal_execution_engine.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

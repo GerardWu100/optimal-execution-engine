@@ -1,0 +1,47 @@
+{
+  "bar_frequency": "5min",
+  "created_at_utc": "2026-04-20T12:34:16Z",
+  "dataset_description": "MSFT opening-window intraday bars for offline research and execution demo.",
+  "dataset_name": "sample_intraday_bars_msft",
+  "date_range": {
+    "end_date": "2026-01-16",
+    "start_date": "2025-11-03"
+  },
+  "expected_session_scope": "opening-window-only",
+  "extracted_symbol": "MSFT",
+  "file_size_bytes": 34819,
+  "intended_use": "modeling_and_demonstration",
+  "portable_parquet_source": true,
+  "portable_source_note": "This Parquet file is the portable offline source for local research and CLI demonstrations.",
+  "query_filters": {
+    "end_date": "2026-01-16",
+    "session": "opening-window-only",
+    "start_date": "2025-11-03",
+    "symbol": "MSFT"
+  },
+  "row_count": 660,
+  "session_filter": "opening-window-only",
+  "source_database": "firstrate",
+  "source_table": "stocks",
+  "symbol_set": [
+    "MSFT"
+  ],
+  "timestamp_bounds": {
+    "max_ts": "2026-01-16 15:25:00+00:00",
+    "min_ts": "2025-11-03 14:30:00+00:00"
+  },
+  "timestamp_coverage": {
+    "first_bar_utc": "2025-11-03T14:30:00+00:00",
+    "last_bar_utc": "2026-01-16T15:25:00+00:00",
+    "rows_per_day_max": 12,
+    "rows_per_day_min": 12,
+    "trade_dates": 55,
+    "unique_bar_spacing_minutes": [
+      5.0,
+      1385.0,
+      4265.0
+    ]
+  },
+  "timezone": "UTC",
+  "trading_date_count": 55
+}
