@@ -7,9 +7,9 @@ This repository is an offline volatility-research-backed execution demo.
 Default runtime path on a fresh machine:
 
 1. Read tracked raw bars from `data/raw/`.
-2. Build realized-variance targets and opening-window features.
+2. Build features from the first six bars and a variance target from later bars.
 3. Train and evaluate simple models with walk-forward validation.
-4. Feed forecast daily volatility into execution scheduling as one compact bridge.
+4. Square-root forecast variance and schedule only after the feature cutoff.
 5. Print concise CLI output and walk through the notebook artifact.
 
 ClickHouse is optional and one-time only for refreshing raw Parquet files.
@@ -18,7 +18,8 @@ ClickHouse is optional and one-time only for refreshing raw Parquet files.
 
 - `README.md`: project contract, runbook, and interview framing.
 - `pyproject.toml`: package metadata, dependencies, console script entrypoint.
-- `config.toml`: defaults for `data/raw/` and optional ClickHouse settings.
+- `config.toml`: raw-data path, forecast cutoff, bar duration, and optional
+  ClickHouse settings.
 - `src/optimal_execution_engine/`: runtime package.
   - start at `src/optimal_execution_engine/cli.py`.
 - `tests/`: data, research, calibration, schedules, simulator, reporting, and CLI
@@ -47,3 +48,5 @@ Recommended reading order:
 
 - 2026-04-20: Updated root guide for the offline research-first architecture,
   namespace package layout, and `data/raw/` contract.
+- 2026-07-13: Separated information and target windows, corrected variance units
+  at the execution boundary, and moved simulated order arrival after the cutoff.

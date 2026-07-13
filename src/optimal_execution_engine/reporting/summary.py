@@ -16,9 +16,7 @@ def summarize_execution(simulation_frame: pd.DataFrame) -> dict[str, float]:
     dict[str, float]
         Aggregated statistics for comparing schedules.
     """
-    total_notional = float(
-        (simulation_frame["shares"] * simulation_frame["mid_price"]).sum()
-    )
+    total_notional = float(simulation_frame["arrival_notional"].sum())
     total_cost_dollars = float(simulation_frame["cost_dollars"].sum())
     total_cost_bps = (
         (total_cost_dollars / total_notional * 10_000.0)
@@ -30,5 +28,8 @@ def summarize_execution(simulation_frame: pd.DataFrame) -> dict[str, float]:
         "total_cost_dollars": total_cost_dollars,
         "total_cost_bps": float(total_cost_bps),
         "mean_cost_bps": float(simulation_frame["cost_bps"].mean()),
-        "average_fill_price": float(simulation_frame["fill_price"].mean()),
+        "average_fill_price": float(
+            (simulation_frame["fill_price"] * simulation_frame["shares"]).sum()
+            / simulation_frame["shares"].sum()
+        ),
     }

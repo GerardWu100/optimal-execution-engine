@@ -116,8 +116,8 @@ def evaluate_walk_forward_split(
     modeling_frame: pd.DataFrame,
     split: WalkForwardSplit,
     feature_columns: list[str],
-    target_column: str = "target_realized_variance",
-    rolling_feature_name: str = "rolling_5d_realized_variance",
+    target_column: str = "target_remaining_realized_variance",
+    rolling_feature_name: str = "rolling_5d_remaining_realized_variance",
 ) -> SplitForecastResult:
     """Fit models on one train window and forecast the paired test window.
 

@@ -54,19 +54,20 @@ Default demos must run with `clickhouse.host = ""` and local files only.
 - Volatility override hook: `src/optimal_execution_engine/calibration/market_state.py`
 - Bridge orchestration: `src/optimal_execution_engine/cli.py`
 
-The bridge is intentionally minimal: forecast volatility can override
-bar-estimated volatility in Almgren-Chriss calibration.
+The bridge is intentionally minimal: a post-cutoff variance forecast is
+square-rooted into volatility before it overrides the Almgren-Chriss input. The
+order arrives after the feature window, and only later bars are simulated.
 
 ## Interview Explanation Guide
 
 When presenting this project:
 
-1. Explain why realized variance is a practical volatility target from intraday
-   bars.
+1. Explain why later-window realized variance is a causal forecast target once
+   the opening feature cutoff is explicit.
 2. Explain why simple baselines plus one linear model improve interpretability
    and credibility.
 3. Explain why walk-forward splits are required to avoid lookahead leakage.
-4. Explain how forecast volatility changes execution urgency in one clean bridge.
+4. Explain why variance must be square-rooted before it changes execution urgency.
 
 ## Extending the Project Safely
 

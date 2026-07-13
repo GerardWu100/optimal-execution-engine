@@ -8,7 +8,7 @@ for volatility forecasting and a small execution bridge.
 This repository is an interview-defensible, laptop-friendly project centered on
 one teaching story:
 
-`raw intraday bars -> realized variance -> features -> model -> walk-forward evaluation -> execution interpretation`
+`opening bars -> causal features -> remaining-window variance -> walk-forward forecast -> volatility -> later-window execution`
 
 The notebook is the primary teaching artifact. The CLI is a compact companion
 that prints one research summary and one execution interpretation.
@@ -34,8 +34,9 @@ Current tracked datasets:
 - `sample_intraday_bars_msft` (MSFT)
 - `sample_intraday_bars_nvda` (NVDA)
 
-All current tracked files are opening-window-only (09:30 to 10:25 Eastern Time),
-5-minute bars, 55 trading days each.
+All current tracked files contain 5-minute bars from 09:30 to 10:25 Eastern Time
+for 55 trading days. The demo observes the first six bars through 09:55 and
+forecasts the variance of returns ending from 10:00 through 10:25.
 
 ## Research Backbone
 
@@ -43,16 +44,20 @@ The research subpackage builds daily modeling tables from local raw Parquet.
 
 Primary target:
 
-- same-day realized variance proxy from intraday log returns.
+- remaining-window realized variance from squared log returns after the opening
+  information cutoff.
 
 Primary features:
 
 - opening-window realized variance,
 - opening return,
 - opening range,
-- opening volume share,
-- lagged realized variance,
-- rolling 5-day and 10-day realized-variance means.
+- log opening volume,
+- lagged remaining-window variance,
+- rolling 5-day and 10-day remaining-window variance means.
+
+Every same-day feature is observable by 09:55. In particular, the feature set
+does not divide opening volume by later volume that is unknown at that time.
 
 Primary models:
 
@@ -71,9 +76,12 @@ Evaluation protocol:
 
 The execution module stays intentionally small.
 
-- Forecast daily volatility from the research pipeline.
-- Pass it into Almgren-Chriss as `override_daily_volatility`.
-- Compare resulting execution costs against TWAP and VWAP-style baselines.
+- Forecast remaining-window variance from the research pipeline.
+- Convert variance to volatility with `sqrt(predicted_variance)`.
+- Start the order after the feature cutoff and pass the volatility into
+  Almgren-Chriss as `override_daily_volatility`.
+- Compare resulting implementation shortfall against Time-Weighted Average
+  Price (TWAP) and an oracle Volume-Weighted Average Price (VWAP) benchmark.
 
 This keeps execution as a consumer of research, not the entire product.
 
@@ -122,9 +130,9 @@ ClickHouse is optional and one-time for refreshing raw Parquet payloads.
 How to explain this quickly:
 
 1. Start with the offline contract (`data/raw/` only).
-2. Walk through target and feature construction with no leakage.
+2. Walk through the feature cutoff and later-window target with no overlap.
 3. Show walk-forward evaluation with simple interpretable models.
-4. Show how forecast volatility informs execution urgency in one small bridge.
+4. Show how square-rooted variance informs post-cutoff execution urgency.
 
 ## Repository Navigation
 

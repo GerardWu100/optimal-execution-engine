@@ -1,193 +1,254 @@
 ---
-title: "When a Perfect Volatility Forecast Is a Warning"
-description: "An audit of an offline realized-variance pipeline, its walk-forward test, and the small execution model that consumes the forecast."
-date: 2026-07-13
+title: "From opening variance to executable orders: repairing a causal research pipeline"
+description: "A timestamp and unit audit of a realized-variance forecast, walk-forward evaluation, and its Almgren-Chriss execution bridge."
+date: 2026-07-12
 image: images/cover-optimal-execution.png
-categories: ["Quantitative Finance", "Optimal Execution"]
+categories: ["Quantitative Research", "Capital Markets"]
 ---
 
-A linear volatility model with a Mean Absolute Error (MAE) of $1.99 \times 10^{-14}$ looks extraordinary. On this dataset, it is also a reason to stop.
+A forecast is only usable if every input exists when the forecast is issued. Its output must also have the units expected by the next model. The first version of this project failed both tests. The opening variance feature covered all 12 tracked bars, so it equaled the target. The resulting variance forecast then crossed an interface documented as volatility without a square root.
 
-I built this project as an offline research chain: tracked five-minute bars become a realized-variance target, a small feature set feeds three transparent models, and walk-forward tests pass the forecast into a simplified execution schedule. The plumbing is useful. The perfect-looking forecast is not evidence of skill. It comes from a feature that equals the target on every modeled day.
+The repaired pipeline makes one decision at 09:55 Eastern Time. Six five-minute bars are known by then. The model forecasts variance over the next six bars, and the simulated parent order starts at 10:00. That simple timeline fixes the causal error. A second correction converts forecast variance into volatility before it affects execution urgency.
 
-That distinction matters beyond this project. A chronological split can prevent the training set from seeing future rows while still allowing a test-row feature to contain the answer for that same row.
+The corrected result needs an honest warning: the linear model still posts a Mean Absolute Error (MAE) of $2.44\times10^{-14}$. That is not evidence of market forecasting skill. The tracked fixture is deterministic and smooth enough that opening and later variance have a correlation of $0.999999998$ even though they no longer overlap.
 
-## The experiment on paper
+## The decision timeline
 
-The tracked AAPL sample contains 55 trading days. Each day has 12 five-minute bars from 09:30 through 10:25 Eastern Time. After the ten-day rolling feature removes the first ten observations, the modeling table has 45 daily rows.
+The tracked AAPL sample contains 55 trading days. Each day has 12 five-minute bars from 09:30 through 10:25 Eastern Time. Let $d$ denote a trade date, $t\in\{0,\ldots,11\}$ denote a bar index, and $P_{d,t}$ denote the bar close in dollars.
 
-For day $d$ and intraday bar $t$, let $P_{d,t}$ be the close price in dollars. The log return is
+The close-to-close log return is
 
 $$
 r_{d,t}=\log\left(\frac{P_{d,t}}{P_{d,t-1}}\right).
 $$
 
-The ratio $P_{d,t}/P_{d,t-1}$ is unitless, so $r_{d,t}$ is also unitless. Squaring and summing the available intraday returns gives the realized-variance proxy for day $d$:
+The ratio inside the logarithm is unitless, so $r_{d,t}$ is unitless. The first bar has no previous close within the same day and contributes no within-day return.
+
+Set the information cutoff to $m=6$ bars. The opening feature uses returns ending before the cutoff:
 
 $$
-RV_d=\sum_{t=1}^{T_d}r_{d,t}^2,
+RV^{\text{open}}_d=\sum_{t=1}^{m-1}r_{d,t}^{2}.
 $$
 
-where $T_d$ is the number of bars available on that day. The first bar has no within-day prior close, so the implementation assigns it a zero contribution. In the tracked sample, $T_d=12$ on every day. This is an opening-hour variance proxy, not full-session daily variance.
+Here $RV^{\text{open}}_d$ is opening realized variance. It is known after the 09:55 close. The target uses returns whose ending closes arrive later:
 
-The feature table contains the opening-window realized variance, opening return, opening high-low range, opening volume share, yesterday's realized variance, and five-day and ten-day lagged means. The rolling features are shifted before averaging:
+$$
+RV^{\text{rem}}_d=\sum_{t=m}^{11}r_{d,t}^{2}.
+$$
+
+Here $RV^{\text{rem}}_d$ is remaining-window realized variance. Its first term is the return from the known 09:55 close to the unknown 10:00 close. No target return exists at forecast time.
+
+<pre>
+09:30                 09:55  10:00                 10:25
+|------ 6 known bars ------| |------ 6 future bars ------|
+       feature window       ^       target/execution
+                             forecast and order arrival
+</pre>
+
+This construction follows the standard realized-volatility idea of estimating variation by summing high-frequency squared returns, but over a deliberately short teaching window rather than a full trading day. Andersen, Bollerslev, Diebold, and Labys give the broader empirical foundation for realized volatility in financial returns.[^1]
+
+The product code now rejects any session without at least one bar after the cutoff:
 
 ```python
-merged["lag_1_realized_variance"] = merged.groupby("symbol")[
-    "target_realized_variance"
+bar_counts = returns_frame.groupby(["symbol", "trade_date"]).size()
+invalid_sessions = bar_counts.loc[bar_counts <= opening_window_bars]
+if not invalid_sessions.empty:
+    raise ValueError(
+        "Each session must contain at least one bar after opening_window_bars."
+    )
+
+remaining_frame = returns_frame.loc[
+    returns_frame["bar_index"] >= opening_window_bars
+].copy()
+```
+
+The guard matters because a zero-length future window would quietly recreate the original problem or produce a meaningless zero target.
+
+## Features available at 09:55
+
+The linear model uses seven predictors. Four come from the current opening window:
+
+- opening realized variance;
+- opening log return;
+- opening high-low range divided by the opening price;
+- $\log(1+V^{\text{open}}_d)$, where $V^{\text{open}}_d$ is opening share volume.
+
+Three predictors summarize previous remaining-window targets:
+
+$$
+L_{d,1}=RV^{\text{rem}}_{d-1},
+$$
+
+$$
+M_{d,k}=\frac{1}{k}\sum_{j=1}^{k}RV^{\text{rem}}_{d-j},\qquad k\in\{5,10\}.
+$$
+
+Here $L_{d,1}$ is the one-day lag and $M_{d,k}$ is a trailing mean over $k$ prior trading days. The shift happens before the rolling average:
+
+```python
+merged["lag_1_remaining_realized_variance"] = merged.groupby("symbol")[
+    "target_remaining_realized_variance"
 ].shift(1)
 
-merged["rolling_5d_realized_variance"] = merged.groupby("symbol")[
-    "target_realized_variance"
+merged["rolling_5d_remaining_realized_variance"] = merged.groupby("symbol")[
+    "target_remaining_realized_variance"
 ].transform(lambda values: values.shift(1).rolling(5, min_periods=5).mean())
 ```
 
-That code handles historical information correctly. Each lagged value is known before the current target. The problem sits in a different feature.
+The old feature divided opening volume by total tracked-window volume. Its denominator included bars after 09:55, so it was not known when the forecast was issued. Replacing it with log opening volume closes that smaller leak and keeps the predictor on a manageable numerical scale.
 
-## The feature that contains the answer
+The revised feature and target differ on every modeled day. Their smallest absolute difference is $2.756\times10^{-8}$ variance units.
 
-Let $m$ be the number of bars in the opening feature window. Its realized variance is
+![Opening variance and remaining-window variance are distinct but highly collinear](images/01_feature_target_partition.png)
 
-$$
-RV_d^{(m)}=\sum_{t=1}^{m}r_{d,t}^2.
-$$
+The points do not sit on the equality line, so the feature no longer contains the target. They form an almost straight curve because the fixture generates very smooth, deterministic price paths. Causal separation fixed the research design; it did not turn this sample into market evidence.
 
-The experiment sets $m=12$. The data also contain exactly $T_d=12$ bars per day. Substitution gives
+## Walk-forward models and losses
 
-$$
-RV_d^{(12)}=\sum_{t=1}^{12}r_{d,t}^2
-$$
+Ten prior targets are required for the longest rolling feature, leaving 45 modeling rows. Each walk-forward split trains on 20 consecutive rows and tests on the next five. The window advances by five rows, producing five non-overlapping test blocks and 25 out-of-sample forecasts.
 
-and
+The three models are deliberately small:
 
-$$
-RV_d=\sum_{t=1}^{T_d}r_{d,t}^2=\sum_{t=1}^{12}r_{d,t}^2.
-$$
-
-Both sums have the same terms, so
+1. Persistence predicts $\widehat{RV}^{\text{rem}}_d=L_{d,1}$.
+2. The rolling baseline predicts $\widehat{RV}^{\text{rem}}_d=M_{d,5}$.
+3. Ordinary least squares estimates
 
 $$
-RV_d^{(12)}=RV_d.
+\widehat{RV}^{\text{rem}}_d=\beta_0+\sum_{j=1}^{7}\beta_jx_{d,j},
 $$
 
-The audit confirms exact equality across all 45 modeling rows. The maximum absolute gap is $0.0$ variance units.
-
-![Opening realized variance equals target realized variance on every modeled day](images/01_feature_target_identity.png)
-
-Every point lies on the identity line. A linear regression does not need to discover a stable relationship here. It can copy the target through `opening_realized_variance`.
-
-Suppose $x_{d,j}$ is feature $j$ on day $d$, $\beta_0$ is an intercept, and $\beta_j$ is the coefficient on feature $j$. The fitted model is
+where $x_{d,j}$ is predictor $j$, $\beta_0$ is an intercept, and $\beta_j$ is its fitted coefficient. For a design matrix $X$ and target vector $y$, ordinary least squares chooses the coefficient vector $\widehat{\beta}$ that minimizes squared residuals:
 
 $$
-\widehat{RV}_d=\beta_0+\sum_{j=1}^{p}\beta_j x_{d,j},
+\widehat{\beta}=\arg\min_{b}\lVert Xb-y\rVert_2^2.
 $$
 
-where $p=7$ features and $\widehat{RV}_d$ is predicted realized variance. One feature, say $x_{d,1}$, is already $RV_d$. The least-squares solution can set $\beta_1$ near one, the other coefficients near zero, and reproduce the target up to floating-point error.
-
-The walk-forward procedure still keeps each five-day test block after its 20-day training block. It prevents future-row leakage. It cannot fix contemporaneous leakage inside $x_{d,1}$. These are separate controls:
-
-| Check | What it prevents | Status here |
-|---|---|---|
-| Chronological train/test ordering | Training on future dates | Correct |
-| Lagging historical target features | Using the current target in rolling inputs | Correct |
-| Feature availability at forecast time | Using same-day information that spans the target window | Fails |
-
-## What the metrics really say
-
-For $N$ forecast observations, let $y_i$ be actual realized variance and $\widehat{y}_i$ be its forecast. Mean Absolute Error is
+For $N$ forecasts, actual variance $y_i$, and predicted variance $\widehat{y}_i$, MAE is
 
 $$
-MAE=\frac{1}{N}\sum_{i=1}^{N}\left|y_i-\widehat{y}_i\right|.
+\operatorname{MAE}=\frac{1}{N}\sum_{i=1}^{N}|y_i-\widehat{y}_i|.
 $$
 
-Root Mean Squared Error (RMSE) is derived by squaring each error, averaging the squares, and taking the square root:
+Root Mean Squared Error (RMSE) is
 
 $$
-RMSE=\sqrt{\frac{1}{N}\sum_{i=1}^{N}\left(y_i-\widehat{y}_i\right)^2}.
+\operatorname{RMSE}=\sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i-\widehat{y}_i)^2}.
 $$
 
-The project also computes QLIKE, a loss commonly used for variance forecasts. For strictly positive forecast $\widehat{y}_i$, its implemented form is
+The QLIKE loss used in the code is
 
 $$
-QLIKE=\frac{1}{N}\sum_{i=1}^{N}\left[\log(\widehat{y}_i)+\frac{y_i}{\widehat{y}_i}\right].
+\operatorname{QLIKE}=\frac{1}{N}\sum_{i=1}^{N}\left[\log(\widehat{y}_i)+\frac{y_i}{\widehat{y}_i}\right].
 $$
 
-Lower values are better for all three measures when comparing forecasts on the same target scale.
+Predictions are floored at $10^{-12}$ before QLIKE so its logarithm and division are defined. Patton explains why loss functions robust to a noisy volatility proxy matter when comparing volatility forecasts.[^2]
 
-| Model | Mean MAE | Mean RMSE | Mean QLIKE |
+| Model | MAE (variance units) | RMSE (variance units) | Mean QLIKE |
 |---|---:|---:|---:|
-| Linear | $1.9865 \times 10^{-14}$ | $2.1812 \times 10^{-14}$ | -10.599912 |
-| Persistence | $1.4148 \times 10^{-8}$ | $1.4148 \times 10^{-8}$ | -10.599911 |
-| Rolling five-day mean | $4.2574 \times 10^{-8}$ | $4.2574 \times 10^{-8}$ | -10.599901 |
+| Linear | $2.438\times10^{-14}$ | $2.678\times10^{-14}$ | -11.296174 |
+| Persistence | $7.034\times10^{-9}$ | $7.034\times10^{-9}$ | -11.296173 |
+| Rolling 5-day | $2.117\times10^{-8}$ | $2.117\times10^{-8}$ | -11.296163 |
 
 ![Walk-forward model errors on a logarithmic scale](images/02_model_error_comparison.png)
 
-The logarithmic axis makes the enormous gap visible. It should not be read as an enormous forecasting gain. The linear error is numerical residue from reconstructing the target. The persistence and rolling results are the only honest forecast baselines in this table, and the sample remains too narrow and smooth to support a broad performance claim.
+The logarithmic axis shows the large numerical gap. The right interpretation is narrow: a linear combination of highly collinear synthetic features can extrapolate this fixture almost exactly. There are only 20 training observations for seven predictors plus an intercept, no realistic noise, and no independent market sample. The result verifies plumbing. It does not validate a trading model.
 
-There is a smaller reporting trap too. The command-line interface prints variance errors with six digits after the decimal point. Values near $10^{-8}$ appear as `0.000000`, which makes all three models look exact. Scientific notation is the safer display for quantities on this scale.
+## Variance is not volatility
 
-## The execution bridge and its units
-
-The second half of the project turns a volatility input into an execution schedule. A parent order of 10,000 shares is divided into six slices. Time-Weighted Average Price (TWAP) allocates shares evenly. The volume-weighted schedule follows the observed bar-volume profile. The simplified Almgren-Chriss schedule uses a hyperbolic inventory curve.
-
-Let $\lambda$ be the order's risk-aversion coefficient and $\sigma$ be daily volatility in decimal units. The code defines urgency as
+The execution schedule accepts volatility, denoted by $\sigma$, in decimal return units. The research model predicts variance, denoted by $RV$, in squared-return units. The conversion follows directly from the definition of variance:
 
 $$
-u=\lambda\sigma.
+\operatorname{Var}(r)=\sigma^2.
 $$
 
-For normalized time $t$ between zero and one, the remaining-inventory fraction is
+Taking the non-negative square root gives
 
 $$
-x(t)=\frac{\sinh(u(1-t))}{\sinh(u)}.
+\widehat{\sigma}^{\text{rem}}_d=\sqrt{\widehat{RV}^{\text{rem}}_d}.
 $$
 
-At $t=0$, the numerator and denominator are both $\sinh(u)$, so $x(0)=1$. At $t=1$, the numerator is $\sinh(0)=0$, so $x(1)=0$. Larger $u$ bends the curve toward earlier execution.
+If predicted variance is $4\times10^{-6}$, passing that number as volatility supplies $0.000004$. The correct volatility is $0.002$, or 20 basis points of return. The incorrect interface crossing understates the input by a factor of 500 in this example.
+
+The repaired execution bridge performs the conversion explicitly and rejects negative or non-finite variance forecasts:
 
 ```python
-if override_daily_volatility is not None:
-    daily_volatility = float(max(override_daily_volatility, 0.0))
+predicted_variance = float(forecast_variance_by_trade_date[trade_date])
+if predicted_variance < 0.0 or not np.isfinite(predicted_variance):
+    raise ValueError("Variance forecasts must be finite and non-negative.")
 
-urgency = max(order.risk_aversion * market_state.daily_volatility, MIN_URGENCY)
+predicted_volatility = float(np.sqrt(predicted_variance))
 ```
 
-The interface names the override `daily_volatility`, but the research pipeline supplies $\widehat{RV}_d$, a variance forecast. Variance and volatility are not interchangeable. If returns are in decimal units, the required conversion is
+The simplified Almgren-Chriss schedule defines urgency as
 
 $$
-\widehat{\sigma}_d=\sqrt{\widehat{RV}_d}.
+u=\max(\lambda\sigma,10^{-6}),
 $$
 
-The current bridge omits that square root. This is a unit mismatch at the module boundary. A production implementation would also calibrate the full Almgren-Chriss parameters in consistent time and cost units instead of treating $\lambda\sigma$ as a complete urgency parameter.
-
-The simulator applies an explicit participation-rate impact rule. Let $q_k$ be shares executed in slice $k$, and let $V_k$ be market volume in the matching bar. The participation rate is $q_k/V_k$, and simulated impact in basis points is
+where $\lambda$ is the configured risk-aversion coefficient and $\sigma$ is remaining-window volatility. At normalized time $\tau\in[0,1]$, the fraction of inventory remaining is
 
 $$
-I_k=2+25\frac{q_k}{V_k}.
+x(\tau)=\frac{\sinh(u(1-\tau))}{\sinh(u)}.
 $$
 
-One basis point is $0.01\%$, or $10^{-4}$ in decimal form. Because cost increases directly with participation, a schedule that concentrates shares in low-volume bars is penalized.
+Larger $u$ bends the inventory path toward earlier execution. The project borrows the risk-cost trade-off and hyperbolic inventory shape associated with Almgren and Chriss, but it is a teaching approximation rather than their fully calibrated temporary and permanent impact model.[^3]
 
-![Mean simulated execution cost by schedule](images/03_execution_cost_comparison.png)
+## Post-cutoff execution results
 
-Almgren-Chriss and TWAP are visually indistinguishable at this scale, while the VWAP-style schedule is much costlier under the simulator's participation-rate penalty. The exact values below show how small the first difference is.
+For each of the 25 forecast dates, the order arrives after the 09:55 close. The arrival benchmark is that last known close. Schedules trade against the six bars from 10:00 through 10:25. A 10,000-share buy order is compared across Time-Weighted Average Price (TWAP), the simplified Almgren-Chriss path, and a Volume-Weighted Average Price (VWAP) schedule.
 
-| Schedule | Mean cost | Standard deviation | 90th percentile | Days |
-|---|---:|---:|---:|---:|
-| Almgren-Chriss | 32.794536 bps | 0.457265 bps | 33.417538 bps | 55 |
-| TWAP | 32.794760 bps | 0.457282 bps | 33.417782 bps | 55 |
-| VWAP-style | 48.038066 bps | 0.613094 bps | 48.871924 bps | 55 |
+For slice $i$, let $q_i$ be executed shares and $V_i$ be market volume. The simulator uses participation $q_i/V_i$ and impact
 
-Almgren-Chriss beats TWAP by about $0.000224$ basis points on mean cost, an economically negligible difference. Its recorded 100% win rate against TWAP sounds stronger than the magnitude warrants. The VWAP-style schedule costs about $15.24$ basis points more than TWAP under this simulator, but that result describes the chosen volume profile and linear impact rule, not a general ranking of execution algorithms.
+$$
+I_i=2+25\frac{q_i}{V_i}
+$$
 
-## A defensible next experiment
+in basis points. If $P_i$ is the bar close, the buy fill is
 
-The pipeline can become a useful forecasting study without adding a complicated model. The data contract needs to change first.
+$$
+P_i^{\text{fill}}=P_i\left(1+\frac{I_i}{10{,}000}\right).
+$$
 
-1. Use full-session bars so the target spans a later period than the opening features.
-2. Pick an opening cutoff that is strictly earlier than the target endpoint. For example, construct features through 10:30 and forecast variance from 10:30 to 16:00.
-3. Record an availability timestamp for every feature. A feature is valid only if it exists when the forecast is issued.
-4. Re-run persistence and rolling baselines before fitting the linear model. Complexity earns its place only after the simple baselines are credible.
-5. Convert predicted variance to volatility with $\widehat{\sigma}_d=\sqrt{\widehat{RV}_d}$ before crossing the execution interface.
-6. Test schedule sensitivity across risk aversion, order size, horizon, and impact coefficients. Report economic differences, not win rates alone.
+Let $P^{\text{arr}}$ be the 09:55 arrival price and $Q=\sum_iq_i$ the parent-order size. Total implementation shortfall in basis points is
 
-The codebase already has a good offline boundary, small functions, and repeatable walk-forward machinery. The useful lesson from the current data is more specific: a clean split is necessary, but forecast-time availability is the real definition of a usable feature. When an error metric looks perfect, the first job is to trace the target, not celebrate the model.
+$$
+C_{\text{bps}}=10{,}000\frac{\sum_iq_i(P_i^{\text{fill}}-P^{\text{arr}})}{P^{\text{arr}}Q}.
+$$
+
+The corrected reporting code uses this arrival-price notional and weights average fill price by shares. Earlier code averaged slice costs, which gives a small slice the same influence as a large one.
+
+| Schedule | Mean cost (bps) | Median (bps) | Standard deviation (bps) | 90th percentile (bps) | Days |
+|---|---:|---:|---:|---:|---:|
+| Almgren-Chriss | 23.467 | 23.466 | 0.152 | 23.667 | 25 |
+| TWAP | 23.483 | 23.482 | 0.152 | 23.682 | 25 |
+| VWAP oracle | 24.288 | 24.285 | 0.157 | 24.495 | 25 |
+
+![Mean post-cutoff execution cost with one standard deviation](images/03_execution_cost_comparison.png)
+
+Almgren-Chriss beats TWAP by about $0.016$ basis points on average in this simulator. That difference is tiny and depends on the chosen risk aversion and impact constants. The VWAP schedule is an oracle benchmark because it allocates shares using the realized volumes of future bars. It is costlier here because the toy impact rule penalizes high participation; this says more about the simulator than about VWAP in live execution.
+
+Bertsimas and Lo frame execution as a dynamic optimization problem under price impact and information arrival.[^4] This project does not solve that full problem. It has no order book, spread dynamics, queue position, temporary-versus-permanent impact calibration, or venue choice.
+
+## What the repair establishes
+
+The corrected code now enforces one coherent chain:
+
+<pre>
+bars ending by 09:55
+        -> causal features
+        -> forecast 10:00-10:25 variance
+        -> square root to volatility
+        -> parent order arrives
+        -> simulate only 10:00-10:25 bars
+</pre>
+
+That chain fixes the two material defects and two related issues uncovered during the trace. It does not rescue the empirical claim. A useful next experiment needs full-session market data, a realistic noise structure, substantially more training history, and an execution model whose impact parameters are estimated rather than chosen constants.
+
+The main lesson is procedural. A chronological train-test split cannot repair a feature whose timestamp crosses the decision boundary. Passing tests cannot repair a unit mismatch between modules. Trace time and units before interpreting a metric.
+
+## References
+
+[^1]: Andersen, T. G., Bollerslev, T., Diebold, F. X., and Labys, P. (2003). [Modeling and Forecasting Realized Volatility](https://doi.org/10.1111/1468-0262.00418). *Econometrica*, 71(2), 579-625.
+[^2]: Patton, A. J. (2011). [Volatility Forecast Comparison Using Imperfect Volatility Proxies](https://doi.org/10.1016/j.jeconom.2010.03.034). *Journal of Econometrics*, 160(1), 246-256.
+[^3]: Almgren, R., and Chriss, N. (2001). [Optimal Execution of Portfolio Transactions](https://doi.org/10.21314/JOR.2001.041). *Journal of Risk*, 3(2), 5-39.
+[^4]: Bertsimas, D., and Lo, A. W. (1998). [Optimal Control of Execution Costs](https://doi.org/10.1016/S1386-4181(97)00012-8). *Journal of Financial Markets*, 1(1), 1-50.

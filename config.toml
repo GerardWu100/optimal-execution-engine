@@ -2,6 +2,14 @@
 # Root directory for tracked raw Parquet inputs used by the offline demo.
 root_dir = "data/raw"
 
+[research]
+# Number of opening bars observed before the forecast is issued.
+opening_window_bars = 6
+
+[execution]
+# Duration of each tracked intraday bar in minutes.
+bar_duration_minutes = 5
+
 [clickhouse]
 # Optional ClickHouse host used only for cache refresh/enrichment.
 # Leave empty for the default offline demo path.

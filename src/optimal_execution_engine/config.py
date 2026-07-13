@@ -25,11 +25,25 @@ class ClickHouseSettings(BaseModel):
     verify: bool = False
 
 
+class ResearchSettings(BaseModel):
+    """Forecast-time cutoff settings for the offline research pipeline."""
+
+    opening_window_bars: int = 6
+
+
+class ExecutionSettings(BaseModel):
+    """Bar timing settings for the post-cutoff execution window."""
+
+    bar_duration_minutes: int = 5
+
+
 class Settings(BaseModel):
     """Top-level runtime settings."""
 
     cache: CacheSettings
     clickhouse: ClickHouseSettings = ClickHouseSettings()
+    research: ResearchSettings = ResearchSettings()
+    execution: ExecutionSettings = ExecutionSettings()
 
 
 def _parse_bool(value: str | bool | None, default: bool) -> bool:

@@ -7,6 +7,7 @@ from optimal_execution_engine.research.realized_variance import (
     compute_daily_realized_variance,
     compute_log_returns,
     compute_opening_window_realized_variance,
+    compute_remaining_window_realized_variance,
 )
 
 
@@ -76,6 +77,34 @@ def test_compute_opening_window_realized_variance_respects_window_size() -> None
     expected_day_one = np.log(101.0 / 100.0) ** 2
 
     assert np.isclose(day_one, expected_day_one)
+
+
+def test_remaining_window_target_starts_after_information_cutoff() -> None:
+    """The target should contain only returns ending after the opening window."""
+    bars = _sample_intraday_bars()
+
+    remaining_variance = compute_remaining_window_realized_variance(
+        bars=bars,
+        opening_window_bars=2,
+    )
+
+    day_one = remaining_variance.loc[
+        remaining_variance["trade_date"] == "2026-01-02",
+        "target_remaining_realized_variance",
+    ].iloc[0]
+
+    assert np.isclose(day_one, np.log(102.0 / 101.0) ** 2)
+
+
+def test_remaining_window_target_rejects_sessions_without_future_bar() -> None:
+    """Every modeled session must extend beyond the information cutoff."""
+    bars = _sample_intraday_bars()
+
+    with np.testing.assert_raises_regex(ValueError, "bar after"):
+        compute_remaining_window_realized_variance(
+            bars=bars,
+            opening_window_bars=3,
+        )
 
 
 def test_realized_variance_is_zero_for_flat_prices() -> None:

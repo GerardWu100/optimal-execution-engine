@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from optimal_execution_engine.cli import run_batch_experiment
+from optimal_execution_engine.config import load_settings
 from optimal_execution_engine.data.bars import prepare_intraday_bars
 from optimal_execution_engine.research.dataset import (
     LINEAR_MODEL_FEATURE_COLUMNS,
@@ -30,15 +31,18 @@ from optimal_execution_engine.research.evaluation import (
 BLOG_DIR: Path = Path(__file__).resolve().parent
 PROJECT_ROOT: Path = BLOG_DIR.parent
 RAW_DATA_PATH: Path = PROJECT_ROOT / "data" / "raw" / "sample_intraday_bars.parquet"
+CONFIG_PATH: Path = PROJECT_ROOT / "config.toml"
 DATA_DIR: Path = BLOG_DIR / "data"
 IMAGE_DIR: Path = BLOG_DIR / "images"
 
-OPENING_WINDOW_BARS: int = 12
+SETTINGS = load_settings(config_path=CONFIG_PATH)
+OPENING_WINDOW_BARS: int = SETTINGS.research.opening_window_bars
 TRAIN_WINDOW_DAYS: int = 20
 TEST_WINDOW_DAYS: int = 5
 STEP_DAYS: int = 5
 ORDER_SHARES: int = 10_000
 RISK_AVERSION: float = 5.0
+BAR_DURATION_MINUTES: int = SETTINGS.execution.bar_duration_minutes
 FIGURE_DPI: int = 180
 
 
@@ -74,8 +78,8 @@ def build_research_tables(
     metric_rows: list[dict[str, float | int | str]] = []
     forecast_rows: list[dict[str, float | str]] = []
 
-    # Each test block occurs after its training block. The later audit checks a
-    # separate issue: whether a same-day feature duplicates the target itself.
+    # Each test block occurs after its training block, while same-day features
+    # end before the remaining-window target begins.
     for split_index, split in enumerate(splits):
         result = evaluate_walk_forward_split(
             modeling_frame=modeling_frame,
@@ -107,8 +111,8 @@ def build_research_tables(
             forecast_rows.append(
                 {
                     "trade_date": str(trade_date),
-                    "actual_realized_variance": float(actual),
-                    "linear_predicted_realized_variance": float(predicted),
+                    "actual_remaining_variance": float(actual),
+                    "linear_predicted_remaining_variance": float(predicted),
                 }
             )
 
@@ -120,34 +124,40 @@ def build_research_tables(
 
 
 def plot_feature_target_audit(modeling_frame: pd.DataFrame) -> None:
-    """Plot same-day opening realized variance against the modeled target.
+    """Plot opening variance against the later, non-overlapping target.
 
     Parameters
     ----------
     modeling_frame
         Daily model table containing ``opening_realized_variance`` and
-        ``target_realized_variance`` in decimal variance units.
+        ``target_remaining_realized_variance`` in decimal variance units.
 
     Returns
     -------
     None
-        Writes ``01_feature_target_identity.png`` under ``blog/images``.
+        Writes ``01_feature_target_partition.png`` under ``blog/images``.
     """
     opening = modeling_frame["opening_realized_variance"].to_numpy(dtype=float)
-    target = modeling_frame["target_realized_variance"].to_numpy(dtype=float)
+    target = modeling_frame["target_remaining_realized_variance"].to_numpy(dtype=float)
     lower = float(min(opening.min(), target.min()))
     upper = float(max(opening.max(), target.max()))
 
     fig, axis = plt.subplots(figsize=(9, 6), constrained_layout=True)
     axis.scatter(opening, target, color="#147d92", s=48, alpha=0.75, label="Daily rows")
-    axis.plot([lower, upper], [lower, upper], color="#d07a25", linewidth=2, label="Identity line")
-    axis.set_title("The 12-bar opening feature equals the 12-bar target")
+    axis.plot(
+        [lower, upper],
+        [lower, upper],
+        color="#d07a25",
+        linewidth=2,
+        label="Equality reference",
+    )
+    axis.set_title("Opening and later variance are distinct but highly collinear")
     axis.set_xlabel("Opening realized variance (variance units)")
-    axis.set_ylabel("Target realized variance (variance units)")
+    axis.set_ylabel("10:00-10:25 realized variance (variance units)")
     axis.ticklabel_format(axis="both", style="sci", scilimits=(0, 0))
     axis.grid(alpha=0.2)
     axis.legend(frameon=False)
-    fig.savefig(IMAGE_DIR / "01_feature_target_identity.png", dpi=FIGURE_DPI)
+    fig.savefig(IMAGE_DIR / "01_feature_target_partition.png", dpi=FIGURE_DPI)
     plt.close(fig)
 
 
@@ -197,7 +207,7 @@ def plot_model_errors(metric_frame: pd.DataFrame) -> pd.DataFrame:
     )
     axis.set_yscale("log")
     axis.set_xticks(x_positions, display_labels)
-    axis.set_title("Walk-forward errors reveal an implausibly perfect linear fit")
+    axis.set_title("Synthetic smoothness still produces a near-perfect linear fit")
     axis.set_xlabel("Forecast model")
     axis.set_ylabel("Error (variance units, logarithmic scale)")
     axis.grid(axis="y", alpha=0.2, which="both")
@@ -241,7 +251,7 @@ def plot_execution_costs(execution_summary: pd.DataFrame) -> None:
     )
     axis.bar_label(bars, fmt="%.3f bps", padding=4)
     axis.set_ylim(0.0, float(ordered["mean_cost_bps"].max()) * 1.18)
-    axis.set_title("Simulated mean execution cost across 55 trading days")
+    axis.set_title("Post-cutoff execution cost across 25 forecast days")
     axis.set_xlabel("Schedule")
     axis.set_ylabel("Mean cost (basis points)")
     axis.grid(axis="y", alpha=0.2)
@@ -271,9 +281,12 @@ def main() -> None:
         "symbol",
         "trade_date",
         "opening_realized_variance",
-        "target_realized_variance",
+        "target_remaining_realized_variance",
     ]
-    modeling_frame[audit_columns].to_csv(DATA_DIR / "feature_target_audit.csv", index=False)
+    modeling_frame[audit_columns].to_csv(
+        DATA_DIR / "feature_target_audit.csv",
+        index=False,
+    )
     split_metrics.to_csv(DATA_DIR / "walk_forward_split_metrics.csv", index=False)
     forecast_frame.to_csv(DATA_DIR / "linear_forecasts.csv", index=False)
 
@@ -281,10 +294,10 @@ def main() -> None:
     metric_summary = plot_model_errors(split_metrics)
     metric_summary.to_csv(DATA_DIR / "model_metric_summary.csv", index=False)
 
-    forecast_by_trade_date = dict(
+    forecast_variance_by_trade_date = dict(
         zip(
             forecast_frame["trade_date"],
-            forecast_frame["linear_predicted_realized_variance"],
+            forecast_frame["linear_predicted_remaining_variance"],
             strict=True,
         )
     )
@@ -293,20 +306,28 @@ def main() -> None:
         bars=prepared_bars,
         order_shares=ORDER_SHARES,
         risk_aversion=RISK_AVERSION,
-        forecast_by_trade_date=forecast_by_trade_date,
+        forecast_variance_by_trade_date=forecast_variance_by_trade_date,
+        opening_window_bars=OPENING_WINDOW_BARS,
+        bar_duration_minutes=BAR_DURATION_MINUTES,
     )
     execution_summary.to_csv(DATA_DIR / "execution_summary.csv", index=False)
     plot_execution_costs(execution_summary)
 
-    max_identity_gap = float(
+    minimum_partition_gap = float(
         np.abs(
             modeling_frame["opening_realized_variance"]
-            - modeling_frame["target_realized_variance"]
-        ).max()
+            - modeling_frame["target_remaining_realized_variance"]
+        ).min()
+    )
+    opening_target_correlation = float(
+        modeling_frame["opening_realized_variance"].corr(
+            modeling_frame["target_remaining_realized_variance"]
+        )
     )
     print(f"modeling_rows={len(modeling_frame)}")
     print(f"walk_forward_splits={split_metrics['split_index'].nunique()}")
-    print(f"maximum_feature_target_gap={max_identity_gap:.3e}")
+    print(f"minimum_feature_target_gap={minimum_partition_gap:.3e}")
+    print(f"opening_target_correlation={opening_target_correlation:.9f}")
     print(metric_summary.to_string(index=False))
     print(execution_summary.to_string(index=False))
 

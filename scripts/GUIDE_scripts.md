@@ -25,3 +25,5 @@ uv run python scripts/build_offline_research_pipeline.py
 ## Part 3: Short journal
 
 - 2026-05-20: Moved notebook builder from `notebooks/` to `scripts/` per project layout.
+- 2026-07-13: Builder now records the project kernel and documents the causal
+  opening-feature, later-target, and post-cutoff execution timeline.

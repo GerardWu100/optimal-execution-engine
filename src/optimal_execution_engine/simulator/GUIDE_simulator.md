@@ -29,7 +29,8 @@ Important behavior:
 
 - raises when bars are fewer than schedule rows,
 - aligns bars to the first `len(schedule)` rows,
-- returns mid price, volume share, impact, fill price, dollar cost, and bps cost.
+- returns mid price, volume share, impact, fill price, arrival notional, dollar
+  cost, and basis-point cost.
 
 ## Part 3: Short journal
 

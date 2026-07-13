@@ -26,7 +26,7 @@ def _modeling_frame() -> pd.DataFrame:
                 "2026-01-12",
                 "2026-01-13",
             ],
-            "target_realized_variance": [
+            "target_remaining_realized_variance": [
                 0.0010,
                 0.0011,
                 0.0012,

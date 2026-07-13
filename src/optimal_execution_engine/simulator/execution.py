@@ -2,8 +2,6 @@
 
 import pandas as pd
 
-from optimal_execution_engine.types import ParentOrder
-
 
 BASE_IMPACT_BPS: float = 2.0
 VOLUME_SHARE_IMPACT_COEFFICIENT_BPS: float = 25.0
@@ -68,9 +66,13 @@ def simulate_schedule(
     simulation_frame["cost_dollars"] = (
         signed_cost * simulation_frame["shares"].astype(float)
     )
+    simulation_frame["arrival_price"] = float(arrival_price)
+    simulation_frame["arrival_notional"] = (
+        float(arrival_price) * simulation_frame["shares"].astype(float)
+    )
     simulation_frame["cost_bps"] = (
         simulation_frame["cost_dollars"]
-        / (float(arrival_price) * simulation_frame["shares"].astype(float))
+        / simulation_frame["arrival_notional"]
         * 10_000.0
     )
 

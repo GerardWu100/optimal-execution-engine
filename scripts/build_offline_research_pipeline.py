@@ -1,6 +1,7 @@
 """Build the offline research teaching notebook deterministically."""
 
 from pathlib import Path
+import platform
 
 import nbformat as nbf
 
@@ -69,6 +70,7 @@ import numpy as np
 import pandas as pd
 
 from optimal_execution_engine.cli import run_batch_experiment
+from optimal_execution_engine.config import load_settings
 from optimal_execution_engine.data.bars import prepare_intraday_bars
 from optimal_execution_engine.research.dataset import (
     LINEAR_MODEL_FEATURE_COLUMNS,
@@ -84,6 +86,7 @@ from optimal_execution_engine.research.evaluation import (
 from optimal_execution_engine.research.realized_variance import (
     compute_daily_realized_variance,
     compute_log_returns,
+    compute_remaining_window_realized_variance,
 )
 
 
@@ -100,6 +103,10 @@ if not data_raw_dir.exists():
 
 plt.rcParams["figure.dpi"] = 140
 plt.rcParams["axes.grid"] = True
+
+settings = load_settings(config_path=project_root / "config.toml")
+opening_window_bars = settings.research.opening_window_bars
+bar_duration_minutes = settings.execution.bar_duration_minutes
 """,
         ),
         _markdown_cell(
@@ -110,9 +117,10 @@ This notebook reads only local Parquet files in `data/raw/`.
 It does not create a ClickHouse client and does not require database access.
 ClickHouse is only relevant when refreshing the raw cache outside notebook runtime.
 
-The tracked datasets in this repository are opening-window-only (09:30 to 10:25
-Eastern Time), so realized variance here is computed over the available intraday
-window rather than full regular-hours sessions.
+The tracked datasets cover 09:30 to 10:25 Eastern Time rather than a full
+regular-hours session. The first six bars, ending at 09:55, form the information
+window. The six later bars, from 10:00 through 10:25, form the forecast and
+execution window.
 """,
         ),
         _code_cell(
@@ -184,15 +192,19 @@ coverage_summary
             "rv-construction",
             """## 3) Intraday Log Returns and Realized Variance
 
-For each symbol and day, we compute log returns and realized variance:
+For each symbol and day, we partition close-to-close realized variance at a
+six-bar forecast cutoff. The opening variance is known at 09:55. The target
+starts with the return ending at 10:00, so none of it is known when the forecast
+is issued.
 
 - $r_t = \\log(P_t / P_{t-1})$
-- $RV_{day} = \\sum_t r_t^2$
+- $RV^{open}_d = \\sum_{t < m} r_{d,t}^2$
+- $RV^{remaining}_d = \\sum_{t \\ge m} r_{d,t}^2$
 
 where $P_t$ is the close price at intraday bar $t$.
 
-Because the tracked payload is opening-window-only, this realized variance is an
-opening-window proxy target in the current offline dataset.
+Here $m=6$ is the number of observed bars. The full-window variance remains a
+descriptive quantity; the model predicts only the variance after bar $m-1$.
 """,
         ),
         _code_cell(
@@ -201,8 +213,12 @@ opening-window proxy target in the current offline dataset.
 
 log_returns = compute_log_returns(bars=aapl_bars)
 daily_realized_variance = compute_daily_realized_variance(bars=aapl_bars)
+remaining_realized_variance = compute_remaining_window_realized_variance(
+    bars=aapl_bars,
+    opening_window_bars=opening_window_bars,
+)
 
-log_returns.head(), daily_realized_variance.head()
+log_returns.head(), daily_realized_variance.head(), remaining_realized_variance.head()
 """,
         ),
         _markdown_cell(
@@ -214,19 +230,20 @@ The modeling table includes:
 - opening-window realized variance,
 - opening return,
 - opening range,
-- opening volume share,
-- lagged realized variance,
-- rolling 5-day and 10-day realized-variance means.
+- log opening volume,
+- lagged remaining-window realized variance,
+- rolling 5-day and 10-day remaining-window variance means.
 
-Lags and rolling means are shifted so future target information never leaks into
-features.
+Every same-day feature is available by 09:55. Lags and rolling means are shifted,
+and the old full-window volume denominator is gone because it was not known at
+the cutoff.
 """,
         ),
         _code_cell(
             "feature-code",
             """modeling_frame = build_modeling_dataset_from_bars(
     bars=aapl_bars,
-    opening_window_bars=12,
+    opening_window_bars=opening_window_bars,
 )
 
 modeling_frame.head()
@@ -282,7 +299,7 @@ These models are transparent and interview-defensible.
             """feature_columns = LINEAR_MODEL_FEATURE_COLUMNS
 
 evaluation_rows: list[dict[str, object]] = []
-linear_forecast_by_trade_date: dict[str, float] = {}
+remaining_variance_forecast_by_trade_date: dict[str, float] = {}
 
 for split in splits:
     split_result = evaluate_walk_forward_split(
@@ -297,7 +314,7 @@ for split in splits:
     linear = split_result.linear
 
     for trade_date, forecast_value in zip(split_result.test_trade_dates, linear, strict=True):
-        linear_forecast_by_trade_date[str(trade_date)] = float(forecast_value)
+        remaining_variance_forecast_by_trade_date[str(trade_date)] = float(forecast_value)
 
     evaluation_rows.extend(
         [
@@ -373,8 +390,10 @@ Interpretation should prioritize robustness over one lucky split:
 - note whether improvements are consistent,
 - keep model complexity low unless gains are material.
 
-In this dataset, the research story is about disciplined process and leakage-safe
-evaluation, not about maximizing model complexity.
+The tracked fixture is deterministic and unusually smooth. Near-zero linear
+model error can survive a correct timestamp split because opening and later
+returns remain almost perfectly collinear. Treat this as a pipeline test, not
+evidence of deployable forecasting skill.
 """,
         ),
         _code_cell(
@@ -389,11 +408,12 @@ print(best_model_row.to_string())
             "execution-bridge",
             """## 9) Optional Execution Bridge
 
-We now pass the linear-model daily volatility forecast into Almgren-Chriss as a
-small bridge from research to execution urgency.
+We square-root the linear model's remaining-window variance forecast before
+passing it to Almgren-Chriss as a volatility input. The parent order arrives
+after the 09:55 feature cutoff, and simulation uses only the later six bars.
 
-This keeps the project compact: one forecast signal informs one execution-model
-input.
+The square root is required because variance is in squared-return units while
+the schedule interface expects return volatility.
 """,
         ),
         _code_cell(
@@ -404,7 +424,9 @@ execution_summary = run_batch_experiment(
     bars=prepared_aapl,
     order_shares=10_000,
     risk_aversion=5.0,
-    forecast_by_trade_date=linear_forecast_by_trade_date,
+    forecast_variance_by_trade_date=remaining_variance_forecast_by_trade_date,
+    opening_window_bars=opening_window_bars,
+    bar_duration_minutes=bar_duration_minutes,
 )
 
 execution_summary
@@ -416,7 +438,8 @@ execution_summary
 
 Current limitations:
 
-- tracked data is opening-window-only, not full regular-hours coverage,
+- tracked data covers only the first hour, not a full regular-hours session,
+- deterministic fixture construction creates extreme feature collinearity,
 - no microstructure-level impact model,
 - no hyperparameter search,
 - no multi-asset coupling.
@@ -438,8 +461,10 @@ execution_summary.to_csv(output_dir / "execution_bridge_summary.csv", index=Fals
 
 predictions_frame = pd.DataFrame(
     {
-        "trade_date": list(linear_forecast_by_trade_date.keys()),
-        "predicted_daily_variance": list(linear_forecast_by_trade_date.values()),
+        "trade_date": list(remaining_variance_forecast_by_trade_date.keys()),
+        "predicted_remaining_variance": list(
+            remaining_variance_forecast_by_trade_date.values()
+        ),
     }
 ).sort_values("trade_date")
 predictions_frame.to_parquet(output_dir / "linear_predictions.parquet", index=False)
@@ -461,13 +486,13 @@ fig.savefig(figure_path, dpi=160)
     notebook["cells"] = cells
     notebook["metadata"] = {
         "kernelspec": {
-            "display_name": "Python 3",
+            "display_name": "Python (optimal-execution-engine)",
             "language": "python",
-            "name": "python3",
+            "name": "optimal-execution-engine",
         },
         "language_info": {
             "name": "python",
-            "version": "3.13",
+            "version": platform.python_version(),
         },
     }
     notebook["nbformat"] = 4

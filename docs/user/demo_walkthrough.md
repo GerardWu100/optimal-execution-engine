@@ -28,7 +28,7 @@ Then open the notebook and walk through:
 
 1. offline contract (`data/raw/` only),
 2. schema/session coverage checks,
-3. realized-variance target construction,
+3. non-overlapping opening features and remaining-window target construction,
 4. feature engineering and leakage-safe lagging,
 5. walk-forward model evaluation,
 6. forecast-to-execution bridge.
@@ -41,12 +41,15 @@ Then open the notebook and walk through:
   easy to defend, debug, and interpret in interviews.
 - **Why walk-forward validation?** It preserves chronological order and avoids
   lookahead leakage.
-- **Why bridge to execution?** Forecast daily volatility changes Almgren-Chriss
-  urgency in a tangible, model-driven way.
+- **Why bridge to execution?** The square root of forecast variance has the
+  volatility units expected by Almgren-Chriss. Execution starts only after the
+  forecast becomes available.
 
 ## Honest Limitations To Acknowledge
 
-- tracked payload is opening-window-only, not full regular-hours coverage,
+- tracked payload covers only the first hour, not full regular-hours coverage,
+- deterministic sample construction makes forecast results unrealistically smooth,
+- the VWAP comparison uses realized future volume as an oracle benchmark,
 - impact model remains deliberately simple,
 - no order-book dynamics or venue routing,
 - no hyperparameter search or deep-learning models.

@@ -7,8 +7,8 @@ from optimal_execution_engine.research.features import (
     build_opening_feature_table,
 )
 from optimal_execution_engine.research.realized_variance import (
-    compute_daily_realized_variance,
     compute_opening_window_realized_variance,
+    compute_remaining_window_realized_variance,
 )
 
 
@@ -16,16 +16,16 @@ LINEAR_MODEL_FEATURE_COLUMNS: list[str] = [
     "opening_realized_variance",
     "opening_return",
     "opening_range",
-    "opening_volume_share",
-    "lag_1_realized_variance",
-    "rolling_5d_realized_variance",
-    "rolling_10d_realized_variance",
+    "opening_log_volume",
+    "lag_1_remaining_realized_variance",
+    "rolling_5d_remaining_realized_variance",
+    "rolling_10d_remaining_realized_variance",
 ]
 
 MODELING_OUTPUT_COLUMNS: list[str] = [
     "symbol",
     "trade_date",
-    "target_realized_variance",
+    "target_remaining_realized_variance",
     *LINEAR_MODEL_FEATURE_COLUMNS,
 ]
 
@@ -40,7 +40,7 @@ def build_modeling_dataset(
     ----------
     daily_targets
         Daily target frame with ``symbol``, ``trade_date``, and
-        ``target_realized_variance``.
+        ``target_remaining_realized_variance``.
     opening_features
         Daily opening-feature frame with ``symbol`` and ``trade_date`` plus
         opening predictors.
@@ -80,7 +80,10 @@ def build_modeling_dataset_from_bars(
     pd.DataFrame
         Daily modeling table ready for forecast modeling and evaluation.
     """
-    daily_targets = compute_daily_realized_variance(bars=bars)
+    daily_targets = compute_remaining_window_realized_variance(
+        bars=bars,
+        opening_window_bars=opening_window_bars,
+    )
     opening_target = compute_opening_window_realized_variance(
         bars=bars,
         opening_window_bars=opening_window_bars,

@@ -21,7 +21,8 @@ Testing strategy:
   - `test_clickhouse.py`: session-aware SQL and coverage diagnostics.
   - `test_loaders.py`: offline-first loader behavior and catalog integration.
 - `research/`
-  - `test_realized_variance.py`: log returns and realized-variance targets.
+  - `test_realized_variance.py`: log returns, opening variance, and causal
+    remaining-window targets.
   - `test_features.py`: lagging/rolling features and table alignment.
   - `test_modeling.py`: baselines and linear model fit/predict.
   - `test_walk_forward_evaluation.py`: split protocol and MAE/RMSE/QLIKE.
@@ -29,6 +30,7 @@ Testing strategy:
 - `schedules/`: TWAP, VWAP-style, Almgren-Chriss tests.
 - `simulator/test_execution.py`: execution-cost mechanics.
 - `reporting/test_evaluation.py`: batch summary metrics and win-rate logic.
+- `reporting/test_summary.py`: arrival-notional and share-weighted aggregation.
 
 ## Part 3: Short journal
 

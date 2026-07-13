@@ -42,19 +42,20 @@ splits, and then shows one small bridge into execution urgency.
 ## End-to-End Data Flow
 
 1. **Load raw bars** from `data/raw/` only.
-2. **Build research targets** from intraday log returns and daily realized
-   variance aggregation.
-3. **Engineer features** from opening-window behavior and lagged volatility.
+2. **Engineer features** from the first six bars, all known by 09:55.
+3. **Build the target** from squared log returns ending from 10:00 onward.
 4. **Fit/evaluate models** with persistence, rolling-mean, and linear baselines
    under walk-forward splits.
-5. **Bridge to execution** by passing forecast daily volatility into
-   Almgren-Chriss as an optional override.
+5. **Bridge to execution** by square-rooting forecast variance, passing the
+   resulting volatility into Almgren-Chriss, and using only post-cutoff bars.
 6. **Present outputs** in the offline notebook and concise CLI text output.
 
 ## Domain Logic and Conventions
 
 - **Log return**: $r_t = \log(P_t / P_{t-1})$ where $P_t$ is close price.
-- **Realized variance**: $RV_{day} = \sum_t r_t^2$ over available intraday bars.
+- **Opening variance**: $RV_d^{open}=\sum_{t<m}r_{d,t}^2$, where $m=6$.
+- **Forecast target**: $RV_d^{remaining}=\sum_{t\ge m}r_{d,t}^2$.
+- **Unit conversion**: $\widehat{\sigma}_d=\sqrt{\widehat{RV}_d^{remaining}}$.
 - **Execution impact**: $impact_{bps} = 2.0 + 25.0 \times volume\_share$.
 - **Cost convention**: implementation shortfall in dollars and basis points.
 - **Validation protocol**: walk-forward splits to avoid lookahead leakage.
@@ -70,7 +71,10 @@ splits, and then shows one small bridge into execution urgency.
 
 ## Boundaries and Limitations
 
-- Tracked demo payload is opening-window-only, not full regular-hours coverage.
+- Tracked demo payload covers only the first hour, not a full regular-hours day.
+- Its deterministic construction makes opening and later returns almost
+  perfectly collinear, so model errors do not measure real market skill.
+- The VWAP schedule uses realized later-window volumes and is an oracle benchmark.
 - No order-book microstructure or queue-position modeling.
 - No multi-asset coupling or portfolio-level execution optimization.
 - No hyperparameter search or deep-learning models.

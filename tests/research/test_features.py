@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 
 from optimal_execution_engine.research.dataset import build_modeling_dataset
-from optimal_execution_engine.research.features import build_feature_table
+from optimal_execution_engine.research.features import (
+    build_feature_table,
+    build_opening_feature_table,
+)
 
 
 def _build_daily_target_frame() -> pd.DataFrame:
@@ -26,7 +29,7 @@ def _build_daily_target_frame() -> pd.DataFrame:
                 "2026-01-16",
                 "2026-01-20",
             ],
-            "target_realized_variance": [
+            "target_remaining_realized_variance": [
                 0.0010,
                 0.0011,
                 0.0012,
@@ -105,7 +108,7 @@ def _build_opening_feature_frame() -> pd.DataFrame:
                 0.004,
                 0.0041,
             ],
-            "opening_volume_share": [
+            "opening_log_volume": [
                 0.16,
                 0.161,
                 0.162,
@@ -135,9 +138,9 @@ def test_feature_table_contains_lags_and_rolling_features_without_lookahead() ->
 
     row = features.loc[features["trade_date"] == "2026-01-16"].iloc[0]
 
-    assert np.isclose(row["lag_1_realized_variance"], 0.0019)
-    assert np.isclose(row["rolling_5d_realized_variance"], 0.0017)
-    assert np.isclose(row["rolling_10d_realized_variance"], 0.00145)
+    assert np.isclose(row["lag_1_remaining_realized_variance"], 0.0019)
+    assert np.isclose(row["rolling_5d_remaining_realized_variance"], 0.0017)
+    assert np.isclose(row["rolling_10d_remaining_realized_variance"], 0.00145)
 
 
 def test_feature_table_keeps_symbol_and_date_alignment() -> None:
@@ -180,13 +183,44 @@ def test_build_modeling_dataset_merges_targets_and_features() -> None:
     expected_columns = {
         "symbol",
         "trade_date",
-        "target_realized_variance",
+        "target_remaining_realized_variance",
         "opening_realized_variance",
         "opening_return",
         "opening_range",
-        "opening_volume_share",
-        "lag_1_realized_variance",
-        "rolling_5d_realized_variance",
-        "rolling_10d_realized_variance",
+        "opening_log_volume",
+        "lag_1_remaining_realized_variance",
+        "rolling_5d_remaining_realized_variance",
+        "rolling_10d_remaining_realized_variance",
     }
     assert expected_columns.issubset(dataset.columns)
+
+
+def test_opening_features_do_not_depend_on_post_cutoff_bars() -> None:
+    """Changing future prices and volume must not alter forecast-time features."""
+    bars = pd.DataFrame(
+        {
+            "symbol": ["AAPL"] * 4,
+            "ts": pd.date_range(
+                "2026-01-02 14:30",
+                periods=4,
+                freq="5min",
+                tz="UTC",
+            ),
+            "open": [100.0, 101.0, 102.0, 103.0],
+            "high": [101.0, 102.0, 103.0, 104.0],
+            "low": [99.0, 100.0, 101.0, 102.0],
+            "close": [100.5, 101.5, 102.5, 103.5],
+            "volume": [1_000, 1_100, 1_200, 1_300],
+        }
+    )
+    altered_future = bars.copy()
+    altered_future.loc[2:, ["open", "high", "low", "close"]] *= 2.0
+    altered_future.loc[2:, "volume"] *= 10
+
+    original = build_opening_feature_table(bars=bars, opening_window_bars=2)
+    altered = build_opening_feature_table(
+        bars=altered_future,
+        opening_window_bars=2,
+    )
+
+    pd.testing.assert_frame_equal(original, altered)

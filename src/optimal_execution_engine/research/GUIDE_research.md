@@ -7,8 +7,8 @@ This folder is the research backbone of the project.
 Pipeline stages:
 
 1. compute intraday log returns,
-2. aggregate daily realized variance targets,
-3. engineer opening-window and lagged volatility features,
+2. engineer predictors from a six-bar information window,
+3. aggregate the remaining bars into a non-overlapping variance target,
 4. build modeling tables,
 5. fit simple baselines and linear models,
 6. evaluate with walk-forward splits and forecast metrics.
@@ -21,6 +21,7 @@ The design is intentionally simple and explainable for interview settings.
   - `compute_log_returns`
   - `compute_daily_realized_variance`
   - `compute_opening_window_realized_variance`
+  - `compute_remaining_window_realized_variance`
 - `features.py`
   - opening-feature construction
   - lag/rolling feature table construction
@@ -37,3 +38,5 @@ The design is intentionally simple and explainable for interview settings.
 
 - 2026-04-20: Added research backbone modules and tests to make the project
   narrative centered on offline realized-variance forecasting.
+- 2026-07-13: Changed the model target to post-cutoff variance and removed the
+  future total-volume denominator from same-day features.

@@ -34,10 +34,8 @@ from optimal_execution_engine.types import ParentOrder
 
 
 DEFAULT_ORDER_SHARES: int = 10_000
-DEFAULT_HORIZON_MINUTES: int = 60
 DEFAULT_RISK_AVERSION: float = 5.0
 DEFAULT_SLICE_COUNT: int = 6
-DEFAULT_OPENING_WINDOW_BARS: int = 12
 DEFAULT_TRAIN_WINDOW_DAYS: int = 20
 DEFAULT_TEST_WINDOW_DAYS: int = 5
 DEFAULT_WALK_FORWARD_STEP_DAYS: int = 5
@@ -68,35 +66,40 @@ def _build_parent_order_from_day(
     day_bars: pd.DataFrame,
     order_shares: int,
     risk_aversion: float,
+    horizon_minutes: int,
 ) -> ParentOrder:
-    """Build one deterministic demo order from the first bar of a trading day.
+    """Build one deterministic demo order after an observed information window.
 
     Parameters
     ----------
     day_bars
-        Intraday bars for one trading date.
+        Bars observed before order arrival for one trading date. The last close
+        becomes the arrival benchmark.
     order_shares
         Parent-order size in shares.
     risk_aversion
         Risk-aversion coefficient used by Almgren-Chriss.
+    horizon_minutes
+        Duration of the post-cutoff execution window in minutes.
 
     Returns
     -------
     ParentOrder
         BUY parent order configured for the day frame.
     """
-    first_bar = day_bars.iloc[0]
+    last_observed_bar = day_bars.iloc[-1]
 
-    # Use the first close as arrival benchmark to keep per-day comparisons aligned.
-    arrival_price = float(first_bar["close"])
-    symbol = str(first_bar.get("symbol", "AAPL"))
+    # The order arrives immediately after the information window. Its benchmark
+    # is therefore the last close known when the forecast becomes available.
+    arrival_price = float(last_observed_bar["close"])
+    symbol = str(last_observed_bar.get("symbol", "AAPL"))
 
     return ParentOrder(
         symbol=symbol,
         side="BUY",
         shares=order_shares,
         arrival_price=arrival_price,
-        horizon_minutes=DEFAULT_HORIZON_MINUTES,
+        horizon_minutes=horizon_minutes,
         risk_aversion=risk_aversion,
     )
 
@@ -150,7 +153,9 @@ def run_batch_experiment(
     bars: pd.DataFrame,
     order_shares: int,
     risk_aversion: float,
-    forecast_by_trade_date: dict[str, float] | None = None,
+    forecast_variance_by_trade_date: dict[str, float],
+    opening_window_bars: int,
+    bar_duration_minutes: int,
 ) -> pd.DataFrame:
     """Run all schedule families across dates and return aggregate metrics.
 
@@ -162,48 +167,77 @@ def run_batch_experiment(
         Parent-order size used on each date.
     risk_aversion
         Risk-aversion coefficient used for daily parent orders.
-    forecast_by_trade_date
-        Optional mapping from trade date to forecast daily volatility override.
+    forecast_variance_by_trade_date
+        Mapping from trade date to a remaining-window realized-variance forecast.
+    opening_window_bars
+        Number of bars observed before each forecast and parent-order arrival.
+    bar_duration_minutes
+        Duration of each execution bar in minutes.
 
     Returns
     -------
     pd.DataFrame
         Cross-day summary frame from ``summarize_experiment_batch``.
     """
+    if opening_window_bars <= 0:
+        raise ValueError("opening_window_bars must be positive.")
+    if bar_duration_minutes <= 0:
+        raise ValueError("bar_duration_minutes must be positive.")
+    if not forecast_variance_by_trade_date:
+        raise ValueError("forecast_variance_by_trade_date must not be empty.")
+
     experiment_rows: list[dict[str, float | str]] = []
 
-    # Evaluate each date independently so daily market conditions drive schedules.
-    for trade_date in sorted(bars["trade_date"].unique()):
-        daily_bars = bars.loc[bars["trade_date"] == trade_date].reset_index(drop=True)
+    # Only forecast dates are evaluated. On each one, the feature bars end before
+    # the execution bars begin, preserving the live decision timeline.
+    forecast_dates = set(forecast_variance_by_trade_date)
+    trade_date_labels = bars["trade_date"].astype(str)
+    available_dates = set(trade_date_labels)
+    evaluation_dates = sorted(forecast_dates.intersection(available_dates))
+    if not evaluation_dates:
+        raise ValueError("No forecast dates match the supplied market bars.")
+
+    for trade_date in evaluation_dates:
+        daily_bars = bars.loc[trade_date_labels == trade_date].reset_index(drop=True)
+        if len(daily_bars) <= opening_window_bars:
+            raise ValueError(
+                f"Trade date {trade_date} has no execution bars after the "
+                "opening window."
+            )
+
+        information_bars = daily_bars.iloc[:opening_window_bars].reset_index(drop=True)
+        execution_bars = daily_bars.iloc[opening_window_bars:].reset_index(drop=True)
         order = _build_parent_order_from_day(
-            day_bars=daily_bars,
+            day_bars=information_bars,
             order_shares=order_shares,
             risk_aversion=risk_aversion,
+            horizon_minutes=len(execution_bars) * bar_duration_minutes,
         )
-        predicted_sigma = None
-        if forecast_by_trade_date is not None:
-            predicted_sigma = forecast_by_trade_date.get(str(trade_date))
+        predicted_variance = float(forecast_variance_by_trade_date[trade_date])
+        if predicted_variance < 0.0 or not np.isfinite(predicted_variance):
+            raise ValueError("Variance forecasts must be finite and non-negative.")
+        predicted_volatility = float(np.sqrt(predicted_variance))
 
         schedule_map = _build_daily_schedule_map(
             order=order,
-            day_bars=daily_bars,
-            override_daily_volatility=predicted_sigma,
+            day_bars=execution_bars,
+            override_daily_volatility=predicted_volatility,
         )
 
         for schedule_name, schedule in schedule_map.items():
             simulation_frame = simulate_schedule(
                 schedule=schedule,
-                bars=daily_bars,
+                bars=execution_bars,
                 arrival_price=order.arrival_price,
                 side=order.side,
             )
 
-            # Store mean per-slice shortfall in bps for date-matched comparison.
+            execution_summary = summarize_execution(simulation_frame)
             experiment_rows.append(
                 {
                     "trade_date": str(trade_date),
                     "schedule_name": schedule_name,
-                    "cost_bps": float(simulation_frame["cost_bps"].mean()),
+                    "cost_bps": execution_summary["total_cost_bps"],
                 }
             )
 
@@ -273,6 +307,7 @@ def _format_cross_day_section(batch_summary: pd.DataFrame) -> str:
 
 def _run_offline_research_summary(
     bars: pd.DataFrame,
+    opening_window_bars: int,
 ) -> tuple[str, dict[str, float]]:
     """Build a concise offline research summary and forecast map.
 
@@ -280,6 +315,8 @@ def _run_offline_research_summary(
     ----------
     bars
         Prepared intraday bars for one symbol across many dates.
+    opening_window_bars
+        Number of opening bars available before each forecast.
 
     Returns
     -------
@@ -288,7 +325,7 @@ def _run_offline_research_summary(
     """
     modeling_frame = build_modeling_dataset_from_bars(
         bars=bars,
-        opening_window_bars=DEFAULT_OPENING_WINDOW_BARS,
+        opening_window_bars=opening_window_bars,
     )
 
     if len(modeling_frame) < DEFAULT_TRAIN_WINDOW_DAYS + DEFAULT_TEST_WINDOW_DAYS:
@@ -316,7 +353,7 @@ def _run_offline_research_summary(
     all_persistence: list[float] = []
     all_rolling: list[float] = []
     all_linear: list[float] = []
-    linear_forecast_by_trade_date: dict[str, float] = {}
+    remaining_variance_forecast_by_trade_date: dict[str, float] = {}
 
     for split in splits:
         split_result = evaluate_walk_forward_split(
@@ -335,7 +372,9 @@ def _run_offline_research_summary(
             split_result.linear,
             strict=True,
         ):
-            linear_forecast_by_trade_date[str(trade_date)] = float(forecast_value)
+            remaining_variance_forecast_by_trade_date[str(trade_date)] = float(
+                forecast_value
+            )
 
     actual_array = np.asarray(all_actual, dtype=float)
     persistence_array = np.asarray(all_persistence, dtype=float)
@@ -361,13 +400,13 @@ def _run_offline_research_summary(
     summary_line = (
         "Offline Research Summary: "
         f"splits={len(splits)}, "
-        f"persistence_mae={persistence_mae:.6f}, "
-        f"rolling5_mae={rolling_mae:.6f}, "
-        f"linear_mae={linear_mae:.6f}, "
-        f"linear_rmse={linear_rmse:.6f}, "
+        f"persistence_mae={persistence_mae:.3e}, "
+        f"rolling5_mae={rolling_mae:.3e}, "
+        f"linear_mae={linear_mae:.3e}, "
+        f"linear_rmse={linear_rmse:.3e}, "
         f"linear_qlike={linear_qlike:.6f}"
     )
-    return summary_line, linear_forecast_by_trade_date
+    return summary_line, remaining_variance_forecast_by_trade_date
 
 
 def main() -> None:
@@ -384,23 +423,38 @@ def main() -> None:
         clickhouse_client=clickhouse_client,
     )
     prepared_bars = prepare_intraday_bars(raw_bars=bars)
-    research_summary, forecast_by_trade_date = _run_offline_research_summary(
+    research_summary, forecast_variance_by_trade_date = _run_offline_research_summary(
         bars=prepared_bars,
+        opening_window_bars=settings.research.opening_window_bars,
     )
 
+    if not forecast_variance_by_trade_date:
+        raise RuntimeError("The default dataset produced no walk-forward forecasts.")
+
+    first_trade_date = min(forecast_variance_by_trade_date)
+    first_day_bars = prepared_bars.loc[
+        prepared_bars["trade_date"] == first_trade_date
+    ].reset_index(drop=True)
+    opening_window_bars = settings.research.opening_window_bars
+    information_bars = first_day_bars.iloc[:opening_window_bars]
+    execution_bars = first_day_bars.iloc[opening_window_bars:]
+
     order = _build_parent_order_from_day(
-        day_bars=prepared_bars,
+        day_bars=information_bars,
         order_shares=DEFAULT_ORDER_SHARES,
         risk_aversion=DEFAULT_RISK_AVERSION,
+        horizon_minutes=(
+            len(execution_bars) * settings.execution.bar_duration_minutes
+        ),
     )
 
     # Single-order section uses TWAP vs Almgren-Chriss for a focused contrast.
-    first_trade_date = str(prepared_bars["trade_date"].min())
-    forecast_sigma = forecast_by_trade_date.get(first_trade_date)
+    forecast_variance = forecast_variance_by_trade_date[first_trade_date]
+    forecast_volatility = float(np.sqrt(forecast_variance))
 
     market_state = calibrate_market_state(
-        bars=prepared_bars,
-        override_daily_volatility=forecast_sigma,
+        bars=execution_bars,
+        override_daily_volatility=forecast_volatility,
     )
 
     twap_schedule = build_twap_schedule(order=order, slice_count=DEFAULT_SLICE_COUNT)
@@ -413,7 +467,7 @@ def main() -> None:
     twap_summary = summarize_execution(
         simulate_schedule(
             schedule=twap_schedule,
-            bars=prepared_bars,
+            bars=execution_bars,
             arrival_price=order.arrival_price,
             side=order.side,
         )
@@ -421,7 +475,7 @@ def main() -> None:
     ac_summary = summarize_execution(
         simulate_schedule(
             schedule=ac_schedule,
-            bars=prepared_bars,
+            bars=execution_bars,
             arrival_price=order.arrival_price,
             side=order.side,
         )
@@ -431,13 +485,14 @@ def main() -> None:
         bars=prepared_bars,
         order_shares=DEFAULT_ORDER_SHARES,
         risk_aversion=DEFAULT_RISK_AVERSION,
-        forecast_by_trade_date=forecast_by_trade_date,
+        forecast_variance_by_trade_date=forecast_variance_by_trade_date,
+        opening_window_bars=opening_window_bars,
+        bar_duration_minutes=settings.execution.bar_duration_minutes,
     )
 
     bridge_line = (
-        "Execution Bridge: Almgren-Chriss uses linear-model daily volatility "
-        "forecast when a same-date walk-forward prediction is available; "
-        "otherwise it uses bar-estimated volatility."
+        "Execution Bridge: the remaining-window variance forecast is square-rooted "
+        "into volatility after the opening cutoff, then passed to Almgren-Chriss."
     )
 
     single_order_output = _format_single_order_section(

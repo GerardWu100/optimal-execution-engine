@@ -14,6 +14,13 @@ Regenerate the notebook from Python to keep deterministic cell ordering:
 uv run python scripts/build_offline_research_pipeline.py
 ```
 
+The notebook names the project-specific `optimal-execution-engine` kernel. If it
+is absent after setup, register the current virtual environment once:
+
+```bash
+uv run python -m ipykernel install --user --name optimal-execution-engine --display-name "Python (optimal-execution-engine)"
+```
+
 ## Execute Top-To-Bottom
 
 Use module execution for reliable environments:

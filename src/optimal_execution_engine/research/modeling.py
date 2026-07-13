@@ -31,14 +31,14 @@ def predict_with_persistence(frame: pd.DataFrame) -> np.ndarray:
     Parameters
     ----------
     frame
-        Modeling table containing ``lag_1_realized_variance``.
+        Modeling table containing ``lag_1_remaining_realized_variance``.
 
     Returns
     -------
     np.ndarray
         Predicted realized-variance array.
     """
-    return frame["lag_1_realized_variance"].to_numpy(dtype=float)
+    return frame["lag_1_remaining_realized_variance"].to_numpy(dtype=float)
 
 
 def predict_with_rolling_mean(

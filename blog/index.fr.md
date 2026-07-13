@@ -1,193 +1,254 @@
 ---
-title: "Quand une prévision parfaite de volatilité doit inquiéter"
-description: "Audit d'une chaîne hors ligne de variance réalisée, de son test walk-forward et du petit modèle d'exécution qui consomme la prévision."
-date: 2026-07-13
+title: "De la variance d'ouverture aux ordres exécutables : réparer une chaîne de recherche causale"
+description: "Audit des horodatages et des unités d'une prévision de variance réalisée, de son évaluation walk-forward et de son lien avec Almgren-Chriss."
+date: 2026-07-12
 image: images/cover-optimal-execution.png
-categories: ["Quantitative Finance", "Optimal Execution"]
+categories: ["Quantitative Research", "Capital Markets"]
 ---
 
-Une erreur absolue moyenne de $1.99 \times 10^{-14}$ pour un modèle linéaire de volatilité paraît exceptionnelle. Sur ce jeu de données, elle donne surtout une bonne raison de s'arrêter.
+Une prévision n'est exploitable que si chaque entrée existe au moment où elle est calculée. Sa sortie doit aussi avoir l'unité attendue par le modèle suivant. La première version de ce projet échouait sur ces deux points. La variable de variance d'ouverture couvrait les 12 barres suivies et se confondait donc avec la cible. La prévision de variance franchissait ensuite une interface documentée comme une volatilité, sans passer par une racine carrée.
 
-J'ai construit ce projet comme une chaîne de recherche utilisable hors ligne. Des barres de cinq minutes suivies dans le dépôt produisent une cible de variance réalisée. Un petit ensemble de variables alimente trois modèles transparents, puis des tests walk-forward transmettent la prévision à un modèle d'exécution simplifié. La plomberie est utile. La prévision apparemment parfaite ne prouve aucune qualité prédictive. Une variable est égale à la cible pour chaque journée modélisée.
+La chaîne corrigée prend une décision à 9 h 55, heure de l'Est. Six barres de cinq minutes sont alors connues. Le modèle prévoit la variance des six barres suivantes, puis l'ordre parent simulé commence à 10 h. Cette chronologie sépare l'information de la cible. Une seconde correction convertit la variance prévue en volatilité avant de modifier l'urgence d'exécution.
 
-La distinction dépasse ce projet. Une séparation chronologique peut empêcher l'apprentissage sur des observations futures tout en laissant une variable de la ligne test contenir la réponse de cette même ligne.
+Le résultat demande pourtant une mise en garde : l'erreur absolue moyenne, ou Mean Absolute Error (MAE), du modèle linéaire reste égale à $2.44\times10^{-14}$. Ce chiffre ne mesure pas une capacité à prévoir le marché. Le jeu de démonstration est si déterministe et lisse que la corrélation entre la variance d'ouverture et celle de la fenêtre suivante atteint $0.999999998$, même sans chevauchement.
 
-## L'expérience sur le papier
+## La chronologie de la décision
 
-L'échantillon AAPL suivi dans le dépôt contient 55 jours de bourse. Chaque journée compte 12 barres de cinq minutes, de 09:30 à 10:25, heure de l'Est. La moyenne mobile sur dix jours élimine les dix premières observations, ce qui laisse 45 lignes quotidiennes pour la modélisation.
+L'échantillon AAPL suivi contient 55 séances. Chacune comprend 12 barres de cinq minutes, de 9 h 30 à 10 h 25, heure de l'Est. Notons $d$ la date de négociation, $t\in\{0,\ldots,11\}$ l'indice d'une barre et $P_{d,t}$ sa clôture en dollars.
 
-Pour le jour $d$ et la barre intrajournalière $t$, notons $P_{d,t}$ le cours de clôture en dollars. Le rendement logarithmique vaut
+Le rendement logarithmique entre deux clôtures est
 
 $$
 r_{d,t}=\log\left(\frac{P_{d,t}}{P_{d,t-1}}\right).
 $$
 
-Le ratio $P_{d,t}/P_{d,t-1}$ n'a pas d'unité. Il en va donc de même pour $r_{d,t}$. La somme des carrés des rendements intrajournaliers disponibles donne la mesure approchée de variance réalisée du jour $d$ :
+Le ratio dans le logarithme est sans unité, tout comme $r_{d,t}$. La première barre n'a pas de clôture antérieure dans la séance et ne contribue donc à aucun rendement intrajournalier.
+
+Fixons la coupure d'information à $m=6$ barres. La variable d'ouverture utilise les rendements qui se terminent avant cette coupure :
 
 $$
-RV_d=\sum_{t=1}^{T_d}r_{d,t}^2,
+RV^{\text{open}}_d=\sum_{t=1}^{m-1}r_{d,t}^{2}.
 $$
 
-où $T_d$ désigne le nombre de barres disponibles ce jour-là. La première barre n'a pas de clôture antérieure dans la même journée, et sa contribution est donc fixée à zéro par l'implémentation. Dans l'échantillon suivi, $T_d=12$ tous les jours. Il s'agit d'une mesure de variance sur l'heure d'ouverture, pas d'une variance quotidienne sur la séance complète.
+Ici, $RV^{\text{open}}_d$ est la variance réalisée d'ouverture. Elle est connue après la clôture de 9 h 55. La cible utilise les rendements dont la clôture finale arrive plus tard :
 
-La table de variables contient la variance réalisée pendant la fenêtre d'ouverture, le rendement d'ouverture, l'amplitude entre le plus haut et le plus bas, la part du volume négociée à l'ouverture, la variance réalisée de la veille ainsi que ses moyennes décalées sur cinq et dix jours. Le décalage précède le calcul des moyennes mobiles :
+$$
+RV^{\text{rem}}_d=\sum_{t=m}^{11}r_{d,t}^{2}.
+$$
+
+Ici, $RV^{\text{rem}}_d$ est la variance réalisée de la fenêtre restante. Son premier terme est le rendement entre la clôture connue de 9 h 55 et celle, encore inconnue, de 10 h. Aucun rendement cible n'existe au moment de la prévision.
+
+<pre>
+09:30                 09:55  10:00                 10:25
+|------ 6 known bars ------| |------ 6 future bars ------|
+       feature window       ^       target/execution
+                             forecast and order arrival
+</pre>
+
+Cette construction reprend l'idée usuelle de la volatilité réalisée, estimée par la somme des carrés de rendements à haute fréquence, mais sur une courte fenêtre pédagogique plutôt que sur une séance complète. Andersen, Bollerslev, Diebold et Labys fournissent le cadre empirique plus général de la volatilité réalisée des rendements financiers.[^1]
+
+Le code rejette désormais toute séance qui ne contient aucune barre après la coupure :
 
 ```python
-merged["lag_1_realized_variance"] = merged.groupby("symbol")[
-    "target_realized_variance"
+bar_counts = returns_frame.groupby(["symbol", "trade_date"]).size()
+invalid_sessions = bar_counts.loc[bar_counts <= opening_window_bars]
+if not invalid_sessions.empty:
+    raise ValueError(
+        "Each session must contain at least one bar after opening_window_bars."
+    )
+
+remaining_frame = returns_frame.loc[
+    returns_frame["bar_index"] >= opening_window_bars
+].copy()
+```
+
+Cette vérification empêche une fenêtre future vide de recréer le défaut initial ou de produire une cible nulle dépourvue de sens.
+
+## Les variables disponibles à 9 h 55
+
+Le modèle linéaire utilise sept variables. Quatre proviennent de la fenêtre d'ouverture du jour :
+
+- la variance réalisée d'ouverture ;
+- le rendement logarithmique d'ouverture ;
+- l'amplitude haut-bas divisée par le prix d'ouverture ;
+- $\log(1+V^{\text{open}}_d)$, où $V^{\text{open}}_d$ est le volume en actions de la fenêtre d'ouverture.
+
+Trois variables résument les cibles passées de la fenêtre restante :
+
+$$
+L_{d,1}=RV^{\text{rem}}_{d-1},
+$$
+
+$$
+M_{d,k}=\frac{1}{k}\sum_{j=1}^{k}RV^{\text{rem}}_{d-j},\qquad k\in\{5,10\}.
+$$
+
+$L_{d,1}$ est le retard d'une séance et $M_{d,k}$ une moyenne mobile sur les $k$ séances antérieures. Le décalage précède la moyenne :
+
+```python
+merged["lag_1_remaining_realized_variance"] = merged.groupby("symbol")[
+    "target_remaining_realized_variance"
 ].shift(1)
 
-merged["rolling_5d_realized_variance"] = merged.groupby("symbol")[
-    "target_realized_variance"
+merged["rolling_5d_remaining_realized_variance"] = merged.groupby("symbol")[
+    "target_remaining_realized_variance"
 ].transform(lambda values: values.shift(1).rolling(5, min_periods=5).mean())
 ```
 
-Ce code traite correctement l'information historique. Chaque valeur décalée est connue avant la cible courante. Le problème vient d'une autre variable.
+L'ancienne variable divisait le volume d'ouverture par le volume total de la fenêtre suivie. Son dénominateur contenait des barres postérieures à 9 h 55. Il était donc inconnu au moment de la prévision. Le logarithme du seul volume d'ouverture ferme cette fuite et réduit l'écart d'échelle numérique avec les autres variables.
 
-## La variable qui contient la réponse
+La variable et la cible corrigées diffèrent pour chacune des journées modélisées. Leur plus petit écart absolu vaut $2.756\times10^{-8}$ unité de variance.
 
-Notons $m$ le nombre de barres de la fenêtre d'ouverture. Sa variance réalisée vaut
+![La variance d'ouverture et la variance de la fenêtre restante sont distinctes mais très colinéaires](images/01_feature_target_partition.png)
 
-$$
-RV_d^{(m)}=\sum_{t=1}^{m}r_{d,t}^2.
-$$
+Les points ne sont plus sur la droite d'égalité : la variable ne contient donc plus la cible. Leur courbe presque droite vient des trajectoires de prix très lisses et déterministes du jeu de démonstration. La séparation causale corrige le protocole de recherche, mais elle ne transforme pas cet échantillon en preuve empirique.
 
-L'expérience fixe $m=12$. Les données contiennent aussi exactement $T_d=12$ barres par jour. En remplaçant ces valeurs, on obtient
+## Modèles walk-forward et fonctions de perte
 
-$$
-RV_d^{(12)}=\sum_{t=1}^{12}r_{d,t}^2
-$$
+La plus longue moyenne mobile demande dix cibles antérieures, ce qui laisse 45 lignes de modélisation. Chaque fenêtre walk-forward s'ajuste sur 20 lignes consécutives et teste les cinq suivantes. Elle avance ensuite de cinq lignes. On obtient cinq blocs de test sans chevauchement, soit 25 prévisions hors échantillon.
 
-et
+Les trois modèles restent volontairement simples :
 
-$$
-RV_d=\sum_{t=1}^{T_d}r_{d,t}^2=\sum_{t=1}^{12}r_{d,t}^2.
-$$
-
-Les deux sommes contiennent les mêmes termes. Par conséquent,
+1. La persistance prévoit $\widehat{RV}^{\text{rem}}_d=L_{d,1}$.
+2. La moyenne mobile prévoit $\widehat{RV}^{\text{rem}}_d=M_{d,5}$.
+3. Les moindres carrés ordinaires estiment
 
 $$
-RV_d^{(12)}=RV_d.
+\widehat{RV}^{\text{rem}}_d=\beta_0+\sum_{j=1}^{7}\beta_jx_{d,j},
 $$
 
-L'audit confirme une égalité exacte sur les 45 lignes du modèle. L'écart absolu maximal est de $0.0$ unité de variance.
-
-![La variance réalisée à l'ouverture est égale à la variance cible chaque jour](images/01_feature_target_identity.png)
-
-Tous les points se trouvent sur la droite d'identité. La régression linéaire n'a pas à découvrir une relation stable. Elle peut recopier la cible par l'intermédiaire de `opening_realized_variance`.
-
-Supposons que $x_{d,j}$ soit la variable $j$ au jour $d$, que $\beta_0$ soit la constante et que $\beta_j$ soit le coefficient de la variable $j$. Le modèle ajusté s'écrit
+où $x_{d,j}$ est la variable $j$, $\beta_0$ l'ordonnée à l'origine et $\beta_j$ son coefficient ajusté. Pour une matrice de conception $X$ et un vecteur cible $y$, les moindres carrés choisissent le vecteur $\widehat{\beta}$ qui minimise la somme des carrés des résidus :
 
 $$
-\widehat{RV}_d=\beta_0+\sum_{j=1}^{p}\beta_j x_{d,j},
+\widehat{\beta}=\arg\min_{b}\lVert Xb-y\rVert_2^2.
 $$
 
-où $p=7$ variables et $\widehat{RV}_d$ désigne la variance réalisée prévue. L'une de ces variables, notée $x_{d,1}$, est déjà égale à $RV_d$. La résolution par moindres carrés peut placer $\beta_1$ près de un, ramener les autres coefficients près de zéro et reproduire la cible à l'erreur d'arrondi près.
-
-La procédure walk-forward place bien chaque bloc test de cinq jours après son bloc d'apprentissage de 20 jours. Elle empêche la fuite d'information provenant des lignes futures. Elle ne peut rien contre une fuite contemporaine à l'intérieur de $x_{d,1}$. Il s'agit de contrôles distincts :
-
-| Contrôle | Ce qu'il empêche | État ici |
-|---|---|---|
-| Ordre chronologique apprentissage/test | Apprentissage sur des dates futures | Correct |
-| Décalage des variables historiques de cible | Présence de la cible courante dans les entrées mobiles | Correct |
-| Disponibilité de la variable à l'heure de prévision | Information du jour couvrant la même fenêtre que la cible | Échec |
-
-## Ce que disent vraiment les mesures
-
-Pour $N$ prévisions, notons $y_i$ la variance réalisée observée et $\widehat{y}_i$ sa prévision. L'erreur absolue moyenne, ou Mean Absolute Error (MAE), est
+Pour $N$ prévisions, une variance observée $y_i$ et une variance prévue $\widehat{y}_i$, la MAE vaut
 
 $$
-MAE=\frac{1}{N}\sum_{i=1}^{N}\left|y_i-\widehat{y}_i\right|.
+\operatorname{MAE}=\frac{1}{N}\sum_{i=1}^{N}|y_i-\widehat{y}_i|.
 $$
 
-La racine de l'erreur quadratique moyenne, ou Root Mean Squared Error (RMSE), s'obtient en élevant chaque erreur au carré, en calculant la moyenne, puis en prenant la racine carrée :
+La racine de l'erreur quadratique moyenne, ou Root Mean Squared Error (RMSE), vaut
 
 $$
-RMSE=\sqrt{\frac{1}{N}\sum_{i=1}^{N}\left(y_i-\widehat{y}_i\right)^2}.
+\operatorname{RMSE}=\sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i-\widehat{y}_i)^2}.
 $$
 
-Le projet calcule aussi la perte QLIKE, souvent employée pour évaluer des prévisions de variance. Pour une prévision strictement positive $\widehat{y}_i$, l'implémentation utilise
+La perte QLIKE calculée par le code est
 
 $$
-QLIKE=\frac{1}{N}\sum_{i=1}^{N}\left[\log(\widehat{y}_i)+\frac{y_i}{\widehat{y}_i}\right].
+\operatorname{QLIKE}=\frac{1}{N}\sum_{i=1}^{N}\left[\log(\widehat{y}_i)+\frac{y_i}{\widehat{y}_i}\right].
 $$
 
-Une valeur plus basse est préférable pour les trois mesures lorsqu'on compare des prévisions sur la même échelle cible.
+Les prévisions sont bornées par le bas à $10^{-12}$ avant le calcul de QLIKE afin que le logarithme et la division soient définis. Patton explique pourquoi une fonction de perte résistante à une mesure approchée et bruitée de la volatilité compte dans la comparaison des prévisions.[^2]
 
-| Modèle | MAE moyenne | RMSE moyenne | QLIKE moyenne |
+| Modèle | MAE (unités de variance) | RMSE (unités de variance) | QLIKE moyen |
 |---|---:|---:|---:|
-| Linéaire | $1.9865 \times 10^{-14}$ | $2.1812 \times 10^{-14}$ | -10.599912 |
-| Persistance | $1.4148 \times 10^{-8}$ | $1.4148 \times 10^{-8}$ | -10.599911 |
-| Moyenne mobile sur cinq jours | $4.2574 \times 10^{-8}$ | $4.2574 \times 10^{-8}$ | -10.599901 |
+| Linéaire | $2.438\times10^{-14}$ | $2.678\times10^{-14}$ | -11.296174 |
+| Persistance | $7.034\times10^{-9}$ | $7.034\times10^{-9}$ | -11.296173 |
+| Moyenne mobile 5 jours | $2.117\times10^{-8}$ | $2.117\times10^{-8}$ | -11.296163 |
 
 ![Erreurs walk-forward des modèles sur une échelle logarithmique](images/02_model_error_comparison.png)
 
-L'échelle logarithmique rend l'écart immense visible. Il ne faut pas y voir un gain prédictif immense. L'erreur du modèle linéaire est le résidu numérique de la reconstruction de la cible. La persistance et la moyenne mobile sont les seuls véritables benchmarks prédictifs de ce tableau. L'échantillon reste trop étroit et trop lisse pour justifier une conclusion générale sur leurs performances.
+L'échelle logarithmique rend visible le grand écart numérique. L'interprétation doit rester étroite : une combinaison linéaire de variables synthétiques très colinéaires extrapole presque exactement ce jeu de données. Chaque ajustement ne dispose que de 20 observations pour sept variables et une constante. L'échantillon ne contient ni bruit réaliste ni marché indépendant. Le résultat vérifie la chaîne de calcul, pas un modèle de trading.
 
-L'affichage en ligne de commande cache un autre piège, plus petit. Les erreurs de variance y sont imprimées avec six chiffres après la virgule. Des valeurs proches de $10^{-8}$ deviennent `0.000000`, ce qui donne l'impression que les trois modèles sont exacts. La notation scientifique convient mieux à des quantités de cette taille.
+## La variance n'est pas la volatilité
 
-## Le passage vers l'exécution et la question des unités
-
-La seconde moitié du projet transforme une entrée de volatilité en programme d'exécution. Un ordre parent de 10,000 actions est réparti en six tranches. La stratégie Time-Weighted Average Price (TWAP) partage les actions uniformément. La stratégie pondérée par le volume suit le profil de volume observé. La version simplifiée d'Almgren-Chriss utilise une courbe hyperbolique pour l'inventaire restant.
-
-Notons $\lambda$ le coefficient d'aversion au risque de l'ordre et $\sigma$ la volatilité quotidienne en valeur décimale. Le code définit l'urgence par
+Le calendrier d'exécution attend une volatilité, notée $\sigma$, en unité de rendement décimal. Le modèle de recherche prévoit une variance, notée $RV$, en unité de rendement au carré. La conversion découle de la définition de la variance :
 
 $$
-u=\lambda\sigma.
+\operatorname{Var}(r)=\sigma^2.
 $$
 
-Pour un temps normalisé $t$ compris entre zéro et un, la fraction d'inventaire restante est
+En prenant la racine carrée non négative, on obtient
 
 $$
-x(t)=\frac{\sinh(u(1-t))}{\sinh(u)}.
+\widehat{\sigma}^{\text{rem}}_d=\sqrt{\widehat{RV}^{\text{rem}}_d}.
 $$
 
-À $t=0$, le numérateur et le dénominateur valent tous deux $\sinh(u)$, donc $x(0)=1$. À $t=1$, le numérateur vaut $\sinh(0)=0$, donc $x(1)=0$. Une valeur plus élevée de $u$ déplace davantage l'exécution vers le début de l'horizon.
+Si la variance prévue vaut $4\times10^{-6}$, la transmettre comme volatilité donne $0.000004$. La volatilité correcte est $0.002$, soit 20 points de base de rendement. Dans cet exemple, l'erreur d'interface réduit l'entrée d'un facteur 500.
+
+Le lien d'exécution corrigé effectue la conversion explicitement et rejette les prévisions négatives ou non finies :
 
 ```python
-if override_daily_volatility is not None:
-    daily_volatility = float(max(override_daily_volatility, 0.0))
+predicted_variance = float(forecast_variance_by_trade_date[trade_date])
+if predicted_variance < 0.0 or not np.isfinite(predicted_variance):
+    raise ValueError("Variance forecasts must be finite and non-negative.")
 
-urgency = max(order.risk_aversion * market_state.daily_volatility, MIN_URGENCY)
+predicted_volatility = float(np.sqrt(predicted_variance))
 ```
 
-L'interface appelle le paramètre de remplacement `daily_volatility`, mais la chaîne de recherche lui fournit $\widehat{RV}_d$, c'est-à-dire une prévision de variance. Variance et volatilité ne sont pas interchangeables. Lorsque les rendements sont exprimés en décimal, la conversion correcte est
+La version simplifiée du calendrier d'Almgren-Chriss définit l'urgence par
 
 $$
-\widehat{\sigma}_d=\sqrt{\widehat{RV}_d}.
+u=\max(\lambda\sigma,10^{-6}),
 $$
 
-Le passage actuel omet cette racine carrée. Il y a donc une incohérence d'unités à la frontière entre les modules. Une implémentation de production devrait aussi calibrer tous les paramètres d'Almgren-Chriss dans des unités de temps et de coût cohérentes, plutôt que d'employer $\lambda\sigma$ comme paramètre complet d'urgence.
-
-Le simulateur impose une règle explicite d'impact fondée sur le taux de participation. Notons $q_k$ le nombre d'actions exécutées dans la tranche $k$ et $V_k$ le volume de marché dans la barre correspondante. Le taux de participation vaut $q_k/V_k$, et l'impact simulé en points de base est
+où $\lambda$ est le coefficient d'aversion au risque configuré et $\sigma$ la volatilité de la fenêtre restante. Au temps normalisé $\tau\in[0,1]$, la fraction de l'inventaire restant est
 
 $$
-I_k=2+25\frac{q_k}{V_k}.
+x(\tau)=\frac{\sinh(u(1-\tau))}{\sinh(u)}.
 $$
 
-Un point de base vaut $0.01\%$, soit $10^{-4}$ en notation décimale. Comme le coût augmente directement avec la participation, le simulateur pénalise une stratégie qui concentre les actions dans des barres à faible volume.
+Une valeur plus élevée de $u$ déplace l'exécution vers le début de l'horizon. Le projet reprend le compromis entre risque et coût ainsi que la forme hyperbolique associée à Almgren et Chriss. Il s'agit toutefois d'une approximation pédagogique, sans leur calibration complète de l'impact temporaire et permanent.[^3]
 
-![Coût moyen simulé par programme d'exécution](images/03_execution_cost_comparison.png)
+## Résultats d'exécution après la coupure
 
-Almgren-Chriss et TWAP sont impossibles à distinguer visuellement à cette échelle, tandis que la stratégie de style VWAP coûte beaucoup plus cher sous la pénalité de participation du simulateur. Les valeurs exactes ci-dessous montrent à quel point le premier écart est faible.
+Pour chacune des 25 dates prévues, l'ordre arrive après la clôture de 9 h 55. Cette dernière clôture connue sert de prix d'arrivée. Les calendriers traitent contre les six barres allant de 10 h à 10 h 25. L'achat de 10 000 actions est réparti selon le Time-Weighted Average Price (TWAP), le chemin simplifié d'Almgren-Chriss et un calendrier de Volume-Weighted Average Price (VWAP).
 
-| Stratégie | Coût moyen | Écart-type | 90e centile | Jours |
-|---|---:|---:|---:|---:|
-| Almgren-Chriss | 32.794536 bps | 0.457265 bps | 33.417538 bps | 55 |
-| TWAP | 32.794760 bps | 0.457282 bps | 33.417782 bps | 55 |
-| Style VWAP | 48.038066 bps | 0.613094 bps | 48.871924 bps | 55 |
+Pour la tranche $i$, notons $q_i$ le nombre d'actions exécutées et $V_i$ le volume de marché. Le simulateur utilise le taux de participation $q_i/V_i$ et l'impact
 
-Almgren-Chriss bat TWAP d'environ $0.000224$ point de base sur le coût moyen, une différence négligeable sur le plan économique. Son taux de victoire de 100% contre TWAP paraît plus fort que l'amplitude réelle de l'écart. La stratégie de style VWAP coûte environ $15.24$ points de base de plus que TWAP dans ce simulateur. Ce résultat décrit le profil de volume et la règle d'impact linéaire retenus. Il ne fournit pas un classement général des algorithmes d'exécution.
+$$
+I_i=2+25\frac{q_i}{V_i}
+$$
 
-## Une prochaine expérience défendable
+en points de base. Si $P_i$ est la clôture de la barre, le prix d'achat simulé est
 
-Cette chaîne peut devenir une étude de prévision utile sans modèle compliqué. Il faut d'abord corriger le contrat de données.
+$$
+P_i^{\text{fill}}=P_i\left(1+\frac{I_i}{10{,}000}\right).
+$$
 
-1. Employer des barres couvrant toute la séance afin que la cible s'étende au-delà de la période utilisée pour construire les variables d'ouverture.
-2. Choisir une coupure d'ouverture strictement antérieure à la fin de la cible. On peut, par exemple, construire les variables jusqu'à 10:30 et prévoir la variance entre 10:30 et 16:00.
-3. Enregistrer une heure de disponibilité pour chaque variable. Une variable n'est valide que si elle existe au moment de la prévision.
-4. Réévaluer la persistance et les moyennes mobiles avant d'ajuster le modèle linéaire. La complexité ne se justifie qu'après validation des benchmarks simples.
-5. Convertir la variance prévue en volatilité avec $\widehat{\sigma}_d=\sqrt{\widehat{RV}_d}$ avant de franchir l'interface d'exécution.
-6. Tester la sensibilité de la stratégie à l'aversion au risque, à la taille de l'ordre, à l'horizon et aux coefficients d'impact. Les différences économiques comptent davantage qu'un taux de victoire isolé.
+Notons $P^{\text{arr}}$ le prix d'arrivée de 9 h 55 et $Q=\sum_iq_i$ la taille de l'ordre parent. L'implementation shortfall total, en points de base, vaut
 
-Le dépôt dispose déjà d'une bonne frontière hors ligne, de petites fonctions et d'une mécanique walk-forward reproductible. Les données actuelles enseignent quelque chose de plus précis. Une séparation propre est nécessaire, mais la disponibilité au moment de la prévision définit une variable utilisable. Devant une mesure d'erreur parfaite, le premier réflexe doit être de retracer la cible, pas de célébrer le modèle.
+$$
+C_{\text{bps}}=10{,}000\frac{\sum_iq_i(P_i^{\text{fill}}-P^{\text{arr}})}{P^{\text{arr}}Q}.
+$$
+
+Le reporting corrigé utilise ce notionnel au prix d'arrivée et pondère le prix d'exécution moyen par le nombre d'actions. L'ancien calcul moyennait les coûts des tranches, ce qui donnait le même poids à une petite tranche qu'à une grande.
+
+| Calendrier | Coût moyen (pb) | Médiane (pb) | Écart-type (pb) | 90e centile (pb) | Jours |
+|---|---:|---:|---:|---:|---:|
+| Almgren-Chriss | 23.467 | 23.466 | 0.152 | 23.667 | 25 |
+| TWAP | 23.483 | 23.482 | 0.152 | 23.682 | 25 |
+| VWAP oracle | 24.288 | 24.285 | 0.157 | 24.495 | 25 |
+
+![Coût moyen d'exécution après la coupure avec un écart-type](images/03_execution_cost_comparison.png)
+
+Almgren-Chriss bat TWAP d'environ $0.016$ point de base en moyenne dans ce simulateur. Cet écart est minuscule et dépend de l'aversion au risque et des constantes d'impact choisies. Le calendrier VWAP est un oracle, car il utilise les volumes futurs réalisés pour répartir les actions. Son coût est plus élevé ici parce que la règle d'impact pénalise un fort taux de participation. Ce résultat décrit surtout le simulateur, pas l'exécution VWAP en production.
+
+Bertsimas et Lo formulent l'exécution comme un problème de contrôle dynamique soumis à l'impact de marché et à l'arrivée d'information.[^4] Le projet ne résout pas ce problème complet. Il ne modélise ni carnet d'ordres, ni dynamique du spread, ni position dans la file, ni calibration séparée des impacts temporaire et permanent, ni choix de place de négociation.
+
+## Ce que la réparation établit
+
+Le code impose maintenant une seule chaîne cohérente :
+
+<pre>
+bars ending by 09:55
+        -> causal features
+        -> forecast 10:00-10:25 variance
+        -> square root to volatility
+        -> parent order arrives
+        -> simulate only 10:00-10:25 bars
+</pre>
+
+Cette chaîne corrige les deux défauts matériels et deux problèmes connexes révélés par l'audit. Elle ne sauve pas la conclusion empirique. Une expérience crédible demanderait des données de séance complète, une structure de bruit réaliste, bien plus d'historique et des paramètres d'impact estimés plutôt que choisis.
+
+La leçon tient à la méthode. Un découpage chronologique entre entraînement et test ne peut pas réparer une variable dont l'horodatage franchit la frontière de décision. Des tests réussis ne corrigent pas une incohérence d'unité entre deux modules. Il faut tracer le temps et les unités avant d'interpréter une mesure de performance.
+
+## Références
+
+[^1]: Andersen, T. G., Bollerslev, T., Diebold, F. X., and Labys, P. (2003). [Modeling and Forecasting Realized Volatility](https://doi.org/10.1111/1468-0262.00418). *Econometrica*, 71(2), 579-625.
+[^2]: Patton, A. J. (2011). [Volatility Forecast Comparison Using Imperfect Volatility Proxies](https://doi.org/10.1016/j.jeconom.2010.03.034). *Journal of Econometrics*, 160(1), 246-256.
+[^3]: Almgren, R., and Chriss, N. (2001). [Optimal Execution of Portfolio Transactions](https://doi.org/10.21314/JOR.2001.041). *Journal of Risk*, 3(2), 5-39.
+[^4]: Bertsimas, D., and Lo, A. W. (1998). [Optimal Control of Execution Costs](https://doi.org/10.1016/S1386-4181(97)00012-8). *Journal of Financial Markets*, 1(1), 1-50.

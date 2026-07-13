@@ -13,8 +13,11 @@ Single-run metrics:
 
 - total dollar cost,
 - total basis-point cost,
-- mean per-slice basis-point cost,
-- average fill price.
+- mean per-slice basis-point cost for diagnostics,
+- share-weighted average fill price.
+
+Total basis-point cost is implementation shortfall divided by arrival-price
+notional. This matches the benchmark used to calculate slice dollar costs.
 
 Cross-day metrics:
 
@@ -40,3 +43,5 @@ Cross-folder usage:
 
 - 2026-04-20: Updated guide paths for namespace package and retained explicit
   TWAP-relative win-rate semantics for interview clarity.
+- 2026-07-13: Corrected order-level cost and average-fill weighting for unequal
+  schedule slices.

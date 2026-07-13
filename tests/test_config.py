@@ -20,6 +20,8 @@ def test_load_settings_reads_cache_directory(tmp_path: Path) -> None:
     settings = load_settings(config_path=config_path)
 
     assert settings.cache.root_dir == "data/raw"
+    assert settings.research.opening_window_bars == 6
+    assert settings.execution.bar_duration_minutes == 5
 
 
 def test_load_settings_applies_clickhouse_env_override(

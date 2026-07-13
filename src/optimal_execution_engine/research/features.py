@@ -7,7 +7,21 @@ from optimal_execution_engine.research.realized_variance import normalize_intrad
 
 
 def _lagged_rolling_mean(series: pd.Series, window: int) -> pd.Series:
-    """Compute a lagged rolling mean that excludes the current row."""
+    """Compute a lagged rolling mean that excludes the current row.
+
+    Parameters
+    ----------
+    series
+        Chronologically ordered observations for one symbol.
+    window
+        Number of prior observations included in each mean.
+
+    Returns
+    -------
+    pd.Series
+        Rolling means aligned with the input index. The first ``window`` values
+        are missing because insufficient prior observations exist.
+    """
     return series.shift(1).rolling(window=window, min_periods=window).mean()
 
 
@@ -52,17 +66,7 @@ def build_opening_feature_table(
         .reset_index(drop=True)
     )
 
-    total_day_volume = (
-        normalized.groupby(["symbol", "trade_date"], as_index=False)["volume"]
-        .sum()
-        .rename(columns={"volume": "total_day_volume"})
-    )
-
-    opening_features = opening_summary.merge(
-        total_day_volume,
-        on=["symbol", "trade_date"],
-        how="left",
-    )
+    opening_features = opening_summary.copy()
 
     opening_features["opening_return"] = np.log(
         opening_features["opening_close_price"].astype(float)
@@ -74,9 +78,11 @@ def build_opening_feature_table(
         - opening_features["opening_low_price"].astype(float)
     ) / opening_features["opening_open_price"].astype(float)
 
-    opening_features["opening_volume_share"] = opening_features[
-        "opening_volume"
-    ].astype(float) / opening_features["total_day_volume"].astype(float)
+    # Total-day volume is unknown at the forecast cutoff. Log opening volume is
+    # fully observable then and reduces the scale disparity in linear fitting.
+    opening_features["opening_log_volume"] = np.log1p(
+        opening_features["opening_volume"].astype(float)
+    )
 
     return opening_features[
         [
@@ -84,7 +90,7 @@ def build_opening_feature_table(
             "trade_date",
             "opening_return",
             "opening_range",
-            "opening_volume_share",
+            "opening_log_volume",
         ]
     ]
 
@@ -99,7 +105,7 @@ def build_feature_table(
     ----------
     daily_targets
         Daily target frame with ``symbol``, ``trade_date``, and
-        ``target_realized_variance``.
+        ``target_remaining_realized_variance``.
     opening_features
         Daily opening features with ``symbol`` and ``trade_date`` keys and
         opening-window predictors.
@@ -122,25 +128,25 @@ def build_feature_table(
     merged = merged.sort_values(["symbol", "trade_date"]).reset_index(drop=True)
 
     # Lag and rolling features are computed per symbol to avoid cross-ticker leakage.
-    merged["lag_1_realized_variance"] = merged.groupby("symbol")[
-        "target_realized_variance"
+    merged["lag_1_remaining_realized_variance"] = merged.groupby("symbol")[
+        "target_remaining_realized_variance"
     ].shift(1)
 
-    merged["rolling_5d_realized_variance"] = merged.groupby("symbol")[
-        "target_realized_variance"
+    merged["rolling_5d_remaining_realized_variance"] = merged.groupby("symbol")[
+        "target_remaining_realized_variance"
     ].transform(lambda values: _lagged_rolling_mean(values, window=5))
 
-    merged["rolling_10d_realized_variance"] = merged.groupby("symbol")[
-        "target_realized_variance"
+    merged["rolling_10d_remaining_realized_variance"] = merged.groupby("symbol")[
+        "target_remaining_realized_variance"
     ].transform(lambda values: _lagged_rolling_mean(values, window=10))
 
     required_columns = [
         "opening_return",
         "opening_range",
-        "opening_volume_share",
-        "lag_1_realized_variance",
-        "rolling_5d_realized_variance",
-        "rolling_10d_realized_variance",
+        "opening_log_volume",
+        "lag_1_remaining_realized_variance",
+        "rolling_5d_remaining_realized_variance",
+        "rolling_10d_remaining_realized_variance",
     ]
 
     modeling_frame = merged.dropna(subset=required_columns).reset_index(drop=True)

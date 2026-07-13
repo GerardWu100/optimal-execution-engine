@@ -122,3 +122,71 @@ def compute_opening_window_realized_variance(
         .rename(columns={"squared_log_return": "opening_realized_variance"})
     )
     return opening_target
+
+
+def compute_remaining_window_realized_variance(
+    bars: pd.DataFrame,
+    opening_window_bars: int,
+) -> pd.DataFrame:
+    """Compute realized variance strictly after an opening information window.
+
+    Parameters
+    ----------
+    bars
+        Intraday bars with ``symbol``, ``ts``, and ``close`` columns.
+    opening_window_bars
+        Number of bars observed before the forecast is issued. Returns whose
+        ending bar has an index greater than or equal to this cutoff form the
+        forecast target.
+
+    Returns
+    -------
+    pd.DataFrame
+        Daily target table with ``symbol``, ``trade_date``, and
+        ``target_remaining_realized_variance``. The target is the sum of
+        squared close-to-close log returns ending after the feature cutoff.
+
+    Raises
+    ------
+    ValueError
+        If the cutoff is not positive or any symbol/date has no bar after it.
+    """
+    if opening_window_bars <= 0:
+        raise ValueError("opening_window_bars must be positive.")
+
+    returns_frame = compute_log_returns(bars=bars)
+    returns_frame["bar_index"] = returns_frame.groupby(
+        ["symbol", "trade_date"]
+    ).cumcount()
+
+    bar_counts = returns_frame.groupby(["symbol", "trade_date"]).size()
+    invalid_sessions = bar_counts.loc[bar_counts <= opening_window_bars]
+    if not invalid_sessions.empty:
+        invalid_keys = [
+            f"{symbol}/{trade_date}"
+            for symbol, trade_date in invalid_sessions.index
+        ]
+        raise ValueError(
+            "Each session must contain at least one bar after opening_window_bars; "
+            f"invalid sessions: {', '.join(invalid_keys)}."
+        )
+
+    # A return belongs to the target when its ending close is first observed
+    # after the cutoff. The first target return therefore spans the last known
+    # opening close and the first unseen close.
+    remaining_frame = returns_frame.loc[
+        returns_frame["bar_index"] >= opening_window_bars
+    ].copy()
+    remaining_frame["squared_log_return"] = remaining_frame["log_return"] ** 2
+
+    return (
+        remaining_frame.groupby(["symbol", "trade_date"], as_index=False)[
+            "squared_log_return"
+        ]
+        .sum()
+        .rename(
+            columns={
+                "squared_log_return": "target_remaining_realized_variance"
+            }
+        )
+    )
