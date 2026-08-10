@@ -11,6 +11,8 @@ from optimal_execution_engine.config import ClickHouseSettings, load_settings
 from optimal_execution_engine.data.bars import prepare_intraday_bars
 from optimal_execution_engine.data.clickhouse import ClickHouseMarketDataClient
 from optimal_execution_engine.data.loaders import load_market_data
+from optimal_execution_engine.reporting.evaluation import summarize_experiment_batch
+from optimal_execution_engine.reporting.summary import summarize_execution
 from optimal_execution_engine.research.dataset import (
     LINEAR_MODEL_FEATURE_COLUMNS,
     build_modeling_dataset_from_bars,
@@ -22,8 +24,6 @@ from optimal_execution_engine.research.evaluation import (
     compute_root_mean_squared_error,
     evaluate_walk_forward_split,
 )
-from optimal_execution_engine.reporting.evaluation import summarize_experiment_batch
-from optimal_execution_engine.reporting.summary import summarize_execution
 from optimal_execution_engine.schedules.almgren_chriss import (
     build_almgren_chriss_schedule,
 )
@@ -31,7 +31,6 @@ from optimal_execution_engine.schedules.twap import build_twap_schedule
 from optimal_execution_engine.schedules.vwap import build_vwap_schedule
 from optimal_execution_engine.simulator.execution import simulate_schedule
 from optimal_execution_engine.types import ParentOrder
-
 
 DEFAULT_ORDER_SHARES: int = 10_000
 DEFAULT_RISK_AVERSION: float = 5.0
@@ -443,9 +442,7 @@ def main() -> None:
         day_bars=information_bars,
         order_shares=DEFAULT_ORDER_SHARES,
         risk_aversion=DEFAULT_RISK_AVERSION,
-        horizon_minutes=(
-            len(execution_bars) * settings.execution.bar_duration_minutes
-        ),
+        horizon_minutes=(len(execution_bars) * settings.execution.bar_duration_minutes),
     )
 
     # Single-order section uses TWAP vs Almgren-Chriss for a focused contrast.
@@ -457,11 +454,18 @@ def main() -> None:
         override_daily_volatility=forecast_volatility,
     )
 
-    twap_schedule = build_twap_schedule(order=order, slice_count=DEFAULT_SLICE_COUNT)
+    # Never ask for more slices than there are post-cutoff bars to trade in,
+    # because the simulator needs one bar per slice. This matches the clamp the
+    # cross-day path already applies in ``_build_daily_schedule_map``.
+    single_order_slice_count = min(DEFAULT_SLICE_COUNT, len(execution_bars))
+
+    twap_schedule = build_twap_schedule(
+        order=order, slice_count=single_order_slice_count
+    )
     ac_schedule = build_almgren_chriss_schedule(
         order=order,
         market_state=market_state,
-        slice_count=DEFAULT_SLICE_COUNT,
+        slice_count=single_order_slice_count,
     )
 
     twap_summary = summarize_execution(

@@ -85,8 +85,18 @@ def build_walk_forward_splits(
     if step_size <= 0:
         raise ValueError("step_size must be positive.")
 
-    ordered = frame.sort_values("trade_date").reset_index(drop=True)
-    total_rows = len(ordered)
+    # The returned indices are positions into ``frame`` exactly as supplied, and
+    # the caller applies them with ``.iloc``. Re-sorting a copy here would make
+    # those positions refer to a different row order than the caller's frame, so
+    # the chronological precondition is checked instead of silently re-imposed.
+    trade_dates = frame["trade_date"].astype(str)
+    if not trade_dates.is_monotonic_increasing:
+        raise ValueError(
+            "frame must be sorted by trade_date before building walk-forward "
+            "splits; split indices are positions into the frame as supplied."
+        )
+
+    total_rows = len(frame)
 
     splits: list[WalkForwardSplit] = []
     train_start = 0

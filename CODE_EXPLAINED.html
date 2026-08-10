@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optimal Execution Engine - code explanation</title>
+<script>
+  window.MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<script type="module">
+  // the map diagram at the top of the page; theme follows the page palette
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  mermaid.initialize({ startOnLoad: true, theme: isLight ? "neutral" : "dark",
+                       flowchart: { curve: "basis", useMaxWidth: true } });
+</script>
+<style>
+  :root{
+    /* dark is the default palette; a light override follows below */
+    --paper:#12161b; --bg:#12161b; --panel:#1b2027; --card:#1a1f26; --surface:#1a1f26; --raise:#1e242c;
+    --ink:#e9eef4; --soft:#b3bec9; --muted:#b3bec9; --faint:#828d99;
+    --line:#2c343e; --line2:#232a33;
+    --green:#6fc796; --greenbg:#14241c; --greenline:#2f4d3a;
+    --amber:#e0b365; --amberbg:#262010; --amberline:#4d3f20;
+    --blue:#87b8ee; --bluebg:#141e2b; --blueline:#2d425c;
+    --red:#e89296; --redbg:#26161a; --redline:#4f2f35;
+    --slate:#a7b1be; --slatebg:#1c2027; --slateline:#353c46;
+    --accent:#4fb9c2; --accent-ink:#6fd0d8; --accent-bg:#10262a;
+    --def:#87b8ee; --def-bg:#141e2b; --def-bd:#2d425c;
+    --why:#6fc796; --why-bg:#14241c; --why-bd:#2f4d3a;
+    --warn:#e0b365; --warn-bg:#262010; --warn-bd:#4d3f20;
+    --flag:#e89296; --flag-bg:#26161a; --flag-bd:#4f2f35;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  :root[data-theme="light"]{
+    --paper:#faf8f4; --bg:#faf8f4; --panel:#f1ede6; --card:#ffffff; --surface:#ffffff; --raise:#fbfaf7;
+    --ink:#1b1b1b; --soft:#4a453e; --muted:#4a453e; --faint:#777067;
+    --line:#d6d0c6; --line2:#e7e2da;
+    --green:#2f6b4c; --greenbg:#e7f1ea; --greenline:#bcdac9;
+    --amber:#8f6413; --amberbg:#f6efdd; --amberline:#e3d3a8;
+    --blue:#2c5f95; --bluebg:#e7eef7; --blueline:#c3d6ea;
+    --red:#943232; --redbg:#f6eaea; --redline:#e2c4c4;
+    --slate:#525a66; --slatebg:#eceef1; --slateline:#cdd2d9;
+    --accent:#0e7c86; --accent-ink:#0b5f67; --accent-bg:#e7f4f4;
+    --def:#2c5f95; --def-bg:#e7eef7; --def-bd:#c3d6ea;
+    --why:#2f6b4c; --why-bg:#e7f1ea; --why-bd:#bcdac9;
+    --warn:#8f6413; --warn-bg:#f6efdd; --warn-bd:#e3d3a8;
+    --flag:#943232; --flag-bg:#f6eaea; --flag-bd:#e2c4c4;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;font-size:16px}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:18px;line-height:1.58;-webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility}
+  .wrap{padding:2.2em clamp(1em,4vw,3.2em) 5em}
+
+  h1{font-size:clamp(2.1rem,5vw,2.7rem);line-height:1.12;letter-spacing:-.02em;font-weight:800;
+    text-wrap:balance;margin:.2em 0 .2em}
+  h2{font-size:1.5rem;font-weight:750;letter-spacing:-.01em;text-wrap:balance;
+    margin:2.4em 0 .5em;padding-top:.7em;border-top:2px solid var(--line)}
+  h3{font-size:1.26rem;font-weight:700;margin:1.7em 0 .4em;color:var(--ink)}
+  h3 code{font-size:.92em}
+  h4{font-size:1rem;margin:1.3em 0 .3em;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+  p{margin:.7em 0}
+  ul,ol{margin:.55em 0;padding-left:1.3em}
+  li{margin:.3em 0}
+  strong,b{color:var(--ink)}
+  a{color:var(--accent-ink);text-underline-offset:2px}
+  a:hover{color:var(--accent)}
+  hr{border:none;border-top:1px solid var(--line);margin:2.5em 0}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  code{font-family:var(--mono);font-size:.9em;background:var(--panel);color:var(--ink);
+    padding:.1em .4em;border-radius:4px}
+  pre{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:1em 1.15em;
+    overflow-x:auto;font-size:.94rem;line-height:1.62;margin:1.1em 0;color:var(--ink);
+    font-family:var(--mono)}
+  pre code{background:none;padding:0;font-size:1em}
+  pre .c{color:var(--faint);font-style:italic}
+
+  .lede{font-size:1.12rem;line-height:1.48;color:var(--soft)}
+  .eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent-ink);margin:0 0 1.1em;display:flex;gap:.6em;align-items:center;flex-wrap:wrap}
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .sec-no{font-family:var(--mono);font-size:.85rem;color:var(--accent-ink);
+    letter-spacing:.1em;display:block;margin-bottom:.15em}
+  .tag{display:inline-block;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;
+    background:var(--greenbg);color:var(--green);border:1px solid var(--greenline);
+    padding:.25em .75em;border-radius:20px;margin-bottom:1em}
+  .big{font-size:1.42rem;font-weight:700;color:var(--green)}
+  .pill{font-variant-numeric:tabular-nums;font-weight:600}
+  .fnote{font-size:.95rem;color:var(--soft)}
+  .reads{margin:.55em 0}
+  .reads b{color:var(--soft)}
+  .foot{margin-top:3em;padding-top:1.2em;border-top:1px solid var(--line);
+    color:var(--soft);font-size:.95rem}
+
+  .box{border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+    padding:1em 1.2em;margin:1.3em 0;background:var(--card)}
+  .box>:first-child{margin-top:0}.box>:last-child{margin-bottom:0}
+  .box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+  .box .k{font-weight:700;font-size:.82rem;text-transform:uppercase;letter-spacing:.08em;
+    display:block;margin-bottom:.45em}
+  .def{border-left-color:var(--def);background:var(--def-bg)}.def .k{color:var(--def)}
+  .gist{border-left-color:var(--accent);background:var(--accent-bg)}.gist .k{color:var(--accent-ink)}
+  .why{border-left-color:var(--why);background:var(--why-bg)}.why .k{color:var(--why)}
+  .warn{border-left-color:var(--warn);background:var(--warn-bg)}.warn .k{color:var(--warn)}
+  .flag{border-left-color:var(--flag);background:var(--flag-bg)}.flag .k{color:var(--flag)}
+  .data{border-left-color:var(--slate);background:var(--slatebg)}.data .k{color:var(--slate)}
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:.9em}
+  .io.stack{grid-template-columns:1fr}
+  @media (max-width:820px){.io{grid-template-columns:1fr}}
+  .io .lab{font-family:var(--mono);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--faint);font-weight:700}
+  .io pre{margin:.25em 0 0;font-size:.8rem;line-height:1.5}
+  .data>p{font-size:.95rem}
+
+  .toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:1.1em 1.4em;margin:1.8em 0}
+  .toc .rk{font-family:var(--mono);font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:.5em}
+  .toc ol{margin:.35em 0 0;padding-left:1.4em}
+  .toc a{text-decoration:none;color:var(--ink)}
+  .toc a:hover{color:var(--accent-ink)}
+
+  .scroll{overflow-x:auto;margin:1.2em 0}
+  table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:1rem;background:var(--card);
+    font-variant-numeric:tabular-nums}
+  .scroll table{margin:0}
+  th,td{border:1px solid var(--line);padding:.55em .75em;text-align:left;vertical-align:top}
+  th,thead th{background:var(--panel);color:var(--ink);font-weight:700}
+  td.n,th.n{text-align:right}
+  .pass{color:var(--green);font-weight:700}
+  .failw{color:var(--red);font-weight:700}
+
+  .chip{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;padding:.15em .55em;border-radius:4px;white-space:nowrap;border:1px solid}
+  .c-veto{background:var(--redbg);color:var(--red);border-color:var(--redline)}
+  .c-drop{background:var(--amberbg);color:var(--amber);border-color:var(--amberline)}
+  .c-never{background:var(--slatebg);color:var(--slate);border-color:var(--slateline)}
+  .c-bug{background:var(--bluebg);color:var(--blue);border-color:var(--blueline)}
+  .legend{display:flex;flex-wrap:wrap;gap:.5em 1.1em;margin:1em 0 0;font-size:.92rem;color:var(--soft)}
+  .legend span.chip{margin-right:.4em}
+
+  figure{margin:1.6em 0;text-align:center}
+  /* charts are rendered on white canvases; keep the white plate but soften the glare */
+  figure img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;
+    background:#fff;padding:6px}
+  :root:not([data-theme="light"]) figure img{filter:brightness(.94) contrast(1.02)}
+  figcaption{font-size:.92rem;color:var(--soft);margin-top:.6em;
+    margin-left:auto;margin-right:auto}
+
+  /* the map diagram sits on its own plate and scrolls sideways rather than the page */
+  .mermaid{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:1.2em;margin:1.4em 0;overflow-x:auto;text-align:center;
+    font-family:var(--sans)}
+  .mermaid svg{max-width:100%;height:auto}
+
+  /* rendered maths inherits the page colour instead of MathJax's own default */
+  mjx-container,.katex{color:inherit}
+  mjx-container[display="true"],.katex-display{overflow-x:auto;overflow-y:hidden;padding:.15em 0}
+</style>
+</head><body>
+<div class="wrap">
+
+<p class="eyebrow"><span class="dot"></span>optimal-execution-engine &middot; whole repository &middot; code walkthrough</p>
+<h1>Optimal Execution Engine: reading the code</h1>
+<p class="lede">What this project does, how the folders and modules fit together, the real
+mathematics inside the scheduling and cost code, and the places where it is weaker than it
+first looks.</p>
+
+<div class="box def">
+  <span class="k">How to use this</span>
+  <p>The sections follow the order the code actually runs, starting from
+  <code>src/optimal_execution_engine/cli.py</code>. Every code snippet is copied from the
+  source. Every number in a <b>Sample data</b> box was produced by running this repository
+  on the tracked file <code>data/raw/sample_intraday_bars.parquet</code>; nothing is
+  estimated. This page explains <b>structure and behaviour</b>, not line-by-line syntax.</p>
+</div>
+
+<div class="box why">
+  <span class="k">The process in plain English</span>
+  <p>The project takes 5-minute price bars for the first hour of the trading day. It watches
+  the first six bars, up to 09:55 Eastern Time, and from them predicts how choppy the price
+  will be over the next six bars, from 10:00 to 10:25. It then takes the square root of that
+  prediction to turn a variance into a volatility, hands it to a trade-scheduling model, and
+  buys 10,000 shares across the later six bars using three different schedules so their costs
+  can be compared. The point of the repository is the discipline of the pipeline - the
+  information cutoff, the walk-forward testing, the offline data contract - rather than the
+  forecast itself.</p>
+</div>
+
+<h2 id="map"><span class="sec-no">00</span>Map</h2>
+
+<div class="mermaid">
+flowchart LR
+  raw[("data/raw/*.parquet")] --> load["load_market_data()"]
+  load --> prep["prepare_intraday_bars()"]
+  prep --> rv["remaining and opening variance"]
+  prep --> feat["build_opening_feature_table()"]
+  rv --> ds["build_modeling_dataset_from_bars()"]
+  feat --> ds
+  ds --> wf["walk-forward fit and forecast"]
+  wf --> bridge["sqrt of variance = volatility"]
+  bridge --> sched["TWAP, VWAP, Almgren-Chriss"]
+  sched --> sim["simulate_schedule()"]
+  sim --> rep["summarize_execution()"]
+</div>
+<p class="fnote">Boxes are functions or stages, the cylinder is stored data on disk, and
+arrows show the direction data moves. The single arrow from <code>bridge</code> to
+<code>sched</code> is the whole research-to-execution link: one forecast number changes one
+scheduling input.</p>
+
+<div class="toc">
+  <div class="rk">Contents</div>
+  <ol>
+    <li><a href="#sec1">The shape of the project &mdash; folders, entry points, settings</a></li>
+    <li><a href="#sec2">The data boundary &mdash; <code>validate_cache_pair</code>, <code>load_market_data</code>, <code>prepare_intraday_bars</code></a></li>
+    <li><a href="#sec3">Cutting the day in two &mdash; realized variance</a></li>
+    <li><a href="#sec4">Predictors &mdash; <code>build_opening_feature_table</code>, <code>build_feature_table</code></a></li>
+    <li><a href="#sec5">The modelling table &mdash; <code>build_modeling_dataset_from_bars</code></a></li>
+    <li><a href="#sec6">Three models &mdash; persistence, rolling mean, least squares</a></li>
+    <li><a href="#sec7">Walk-forward testing and the three loss measures</a></li>
+    <li><a href="#sec8">The bridge &mdash; variance becomes volatility</a></li>
+    <li><a href="#sec9">Three schedules &mdash; TWAP, VWAP, Almgren-Chriss</a></li>
+    <li><a href="#sec10">The fill simulator and its impact model</a></li>
+    <li><a href="#sec11">Reporting and what the command prints</a></li>
+    <li><a href="#sec12">Fixes applied</a></li>
+    <li><a href="#sec13">Call graph</a></li>
+    <li><a href="#sec14">Edge cases</a></li>
+    <li><a href="#sec15">Traps worth knowing</a></li>
+    <li><a href="#sec16">Limitations, stated honestly</a></li>
+    <li><a href="#sec17">How to verify any of this yourself</a></li>
+  </ol>
+</div>
+
+<h2 id="sec1"><span class="sec-no">01</span>The shape of the project</h2>
+
+<p>The repository follows a <code>src</code> layout: everything importable lives under
+<code>src/optimal_execution_engine/</code>, and everything else (tests, scripts, notebooks,
+data, outputs) sits outside it.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Folder</th><th>What lives there</th><th>Feeds</th></tr></thead>
+<tbody>
+<tr><td><code>data/</code></td><td>Reads and validates the tracked Parquet files and their JSON description files</td><td>everything downstream</td></tr>
+<tr><td><code>research/</code></td><td>Realized variance, predictors, the modelling table, the three models, walk-forward testing</td><td>the forecast used by the bridge</td></tr>
+<tr><td><code>calibration/</code></td><td>Turns bars into scheduling inputs: average daily volume, volatility, volume shape</td><td><code>schedules/</code></td></tr>
+<tr><td><code>schedules/</code></td><td>Turns one parent order into a list of share amounts, one per slice</td><td><code>simulator/</code></td></tr>
+<tr><td><code>simulator/</code></td><td>Applies a price-impact model to each slice and produces per-slice costs</td><td><code>reporting/</code></td></tr>
+<tr><td><code>reporting/</code></td><td>Adds up slice costs into one summary, and summaries into a cross-day table</td><td>the printed output</td></tr>
+<tr><td><code>cli.py</code></td><td>Wires all of the above together and prints four blocks of text</td><td>the terminal</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Entry points</h3>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Command</th><th>What it does</th><th>Runtime</th></tr></thead>
+<tbody>
+<tr><td><code>uv run optimal-execution</code></td><td>The whole demo: research summary, bridge note, single order, cross-day table. Declared in <code>pyproject.toml</code> as <code>optimal_execution_engine.cli:main</code></td><td>about 2 seconds</td></tr>
+<tr><td><code>uv run python -m pytest -q</code></td><td>49 tests across data, research, calibration, schedules, simulator, reporting and the command output</td><td>about 1 second</td></tr>
+<tr><td><code>uv run python scripts/build_offline_research_pipeline.py</code></td><td>Rewrites <code>notebooks/offline_research_pipeline.ipynb</code> from Python strings, so cell order and cell identifiers stay identical between rebuilds</td><td>instant</td></tr>
+<tr><td><code>uv run python blog/generate_charts.py</code></td><td>Regenerates the frozen tables and figures used by the write-up in <code>blog/</code></td><td>a few seconds</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>What the settings actually change</h3>
+
+<pre><span class="c">[cache]</span>
+root_dir = "data/raw"            <span class="c"># where the tracked Parquet files live</span>
+
+<span class="c">[research]</span>
+opening_window_bars = 6          <span class="c"># bars watched before the forecast is issued</span>
+
+<span class="c">[execution]</span>
+bar_duration_minutes = 5         <span class="c"># length of one bar</span>
+
+<span class="c">[clickhouse]</span>
+host = ""                        <span class="c"># empty means: never touch a database</span></pre>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Setting</th><th>Changing it does what</th><th>What breaks if you push it too far</th></tr></thead>
+<tbody>
+<tr><td><code>research.opening_window_bars</code></td><td>Moves the information cutoff. At 6 the model sees bars 0-5 and predicts bars 6-11. At 3 it sees less and predicts more.</td><td>Must be at least 1 and strictly less than the bars in the shortest day, or <code>compute_remaining_window_realized_variance</code> raises with the offending dates named.</td></tr>
+<tr><td><code>execution.bar_duration_minutes</code></td><td>Sets <code>horizon_minutes</code> on the parent order, and now also sets the fallback bar length used when scaling a bar volatility to a daily one.</td><td>Must be positive; <code>run_batch_experiment</code> checks this.</td></tr>
+<tr><td><code>cache.root_dir</code></td><td>Where the loader looks for <code>&lt;dataset&gt;.parquet</code> and <code>&lt;dataset&gt;.meta.json</code>. It is joined to the project root, not to the current directory.</td><td>A wrong path with no database configured raises <code>FileNotFoundError</code> naming both files it wanted.</td></tr>
+<tr><td><code>clickhouse.host</code></td><td>The only switch between offline and database mode. Empty means <code>_build_optional_clickhouse_client</code> returns <code>None</code> and no client is ever built.</td><td>A host that is set but unreachable turns a working offline demo into a connection error, but only when the local files fail validation first.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box why"><span class="k">Why the settings load the way they do</span>
+<p>Environment variables beat the file. <code>load_settings</code> calls <code>load_dotenv()</code>
+and then, for each ClickHouse field, prefers the environment value when it is present and
+non-empty. This lets a password live in a local <code>.env</code> that is never committed while
+<code>config.toml</code> stays safe to track. Note this override applies only to the
+<code>[clickhouse]</code> block; <code>opening_window_bars</code> and the rest come from the file alone.</p></div>
+
+<div class="box warn"><span class="k">Trap</span>
+<p><code>DEFAULT_SLICE_COUNT</code>, <code>DEFAULT_ORDER_SHARES</code>,
+<code>DEFAULT_RISK_AVERSION</code> and the three walk-forward window sizes are constants at the
+top of <code>cli.py</code>, not settings in <code>config.toml</code>. Changing the order size or
+the risk aversion means editing Python. That is a deliberate simplification, but it means the
+file called <code>config.toml</code> does not hold every tunable number in the project.</p></div>
+
+<h2 id="sec2"><span class="sec-no">02</span>The data boundary</h2>
+
+<p>The rule is that the default run reads local files only. Three functions enforce and shape
+that.</p>
+
+<h3><code>validate_cache_pair</code> &mdash; refuse data that cannot describe itself</h3>
+
+<p>Each dataset is a pair: <code>sample_intraday_bars.parquet</code> plus
+<code>sample_intraday_bars.meta.json</code>. The validator checks that both files exist, that
+the JSON parses, that 21 required keys are present, and then checks the values of several of
+them: <code>row_count</code> must be a non-negative integer, <code>bar_frequency</code> and
+<code>expected_session_scope</code> must be non-empty text, <code>timestamp_coverage</code> must be
+a dictionary carrying six named fields, <code>intended_use</code> must be one of three allowed
+words, and <code>portable_parquet_source</code> must be exactly <code>True</code>.</p>
+
+<div class="box def"><span class="k">What it does</span>
+<p><b>Input:</b> a path to a Parquet file. <b>Output:</b> a <code>CacheValidationResult</code>
+carrying a true/false flag, a readable message, and both paths. <b>Role:</b> it is the only
+thing standing between a corrupt local file and a silent wrong answer downstream.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; data/raw/sample_intraday_bars.meta.json</span>
+<pre>"row_count": 660
+"bar_frequency": "5min"
+"expected_session_scope": "opening-window-only"
+"intended_use": "modeling_and_demonstration"
+"portable_parquet_source": true
+"timestamp_coverage": {
+   "first_bar_utc": "2025-11-03T14:30:00+00:00",
+   "last_bar_utc":  "2026-01-16T15:25:00+00:00",
+   "trade_dates": 55,
+   "rows_per_day_min": 12,
+   "rows_per_day_max": 12,
+   "unique_bar_spacing_minutes":
+       [5.0, 1385.0, 4265.0] }</pre></div>
+<div><span class="lab">out &mdash; validate_cache_pair(...)</span>
+<pre>CacheValidationResult(
+  is_valid=True,
+  message='Cache is valid.',
+  parquet_path=.../sample_intraday_bars.parquet,
+  metadata_path=.../sample_intraday_bars.meta.json)</pre>
+<p class="fnote">The three spacing values are the honest signature of this dataset: 5 minutes
+inside a day, 1385 minutes overnight, 4265 minutes across a weekend.</p></div>
+</div>
+<p>660 rows equals 55 trading days times 12 bars per day, and the metadata says both numbers,
+so the two can be checked against each other.</p></div>
+
+<div class="box why"><span class="k">Why the description file is checked so hard</span>
+<p>The claim the project makes is that it runs anywhere with no database. That claim rests
+entirely on these two files being self-describing. Checking that <code>intended_use</code> is one
+of a fixed set of words, rather than just present, is what stops a placeholder file from
+quietly passing as real data.</p></div>
+
+<h3><code>load_market_data</code> &mdash; local first, database only as a fallback</h3>
+
+<pre>validation = validate_cache_pair(parquet_path=parquet_path)
+
+<span class="c"># Fast path: valid cache returns immediately with no database dependency.</span>
+if validation.is_valid:
+    return pd.read_parquet(validation.parquet_path)
+
+<span class="c"># No refresh client means the caller explicitly requested offline-only behavior.</span>
+if clickhouse_client is None:
+    raise FileNotFoundError(...)</pre>
+
+<div class="box gist"><span class="k">In plain words</span>
+<p>Use the file on disk. If it is missing or malformed and nobody handed you a database
+connection, stop with a clear message rather than guessing.</p></div>
+
+<div class="box def"><span class="k">What it does</span>
+<p><b>Input:</b> a folder, a dataset name, and either a database client or <code>None</code>.
+<b>Output:</b> a DataFrame of bars with columns <code>symbol, ts, open, high, low, close,
+volume</code>. <b>Role:</b> the single doorway through which market data enters the project.</p></div>
+
+<h3><code>prepare_intraday_bars</code> &mdash; add the two labels everything else needs</h3>
+
+<pre>bars["ts"] = pd.to_datetime(bars["ts"], utc=True)
+bars = bars.sort_values("ts").reset_index(drop=True)
+
+<span class="c"># Bucket counters are consumed by VWAP profile estimation and daily slicing.</span>
+bars["trade_date"] = bars["ts"].dt.date.astype(str)
+bars["bucket"] = bars.groupby("trade_date").cumcount()</pre>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; raw bars, first rows</span>
+<pre>ts                          close   volume
+2025-11-03 14:30:00+00:00  100.0000  10800
+2025-11-03 14:35:00+00:00  100.1467  10673
+2025-11-03 14:40:00+00:00  100.2728  10332
+...
+2025-11-03 15:25:00+00:00  100.9000  10800
+2025-11-04 14:30:00+00:00  100.0800  10822</pre></div>
+<div><span class="lab">out &mdash; with trade_date and bucket</span>
+<pre>ts                         trade_date  bucket
+2025-11-03 14:30:00+00:00  2025-11-03      0
+2025-11-03 14:35:00+00:00  2025-11-03      1
+2025-11-03 14:40:00+00:00  2025-11-03      2
+...
+2025-11-03 15:25:00+00:00  2025-11-03     11
+2025-11-04 14:30:00+00:00  2025-11-04      0  &lt;- counter restarts each day</pre></div>
+</div>
+<p>14:30 UTC is 09:30 Eastern Time. Every one of the 55 days has buckets 0 through 11.</p></div>
+
+<div class="box warn"><span class="k">Trap</span>
+<p><code>bucket</code> is counted with <code>groupby("trade_date")</code>, not
+<code>groupby(["symbol", "trade_date"])</code>. Hand this function a frame holding all three
+tracked symbols at once and each day's counter would run 0 to 35 instead of 0 to 11, which
+would corrupt both the volume shape and the day slicing. Nothing in the project does that
+today: the command loads one dataset, and the notebook filters to AAPL before calling this.
+It is still a live edge waiting for the first person who concatenates the symbols.</p></div>
+
+<h2 id="sec3"><span class="sec-no">03</span>Cutting the day in two</h2>
+
+<p>This is the heart of the project's claim to be honest. The day is split at bar six. What is
+known before the cutoff can be a predictor; what happens after it is the thing being predicted;
+and no return is allowed to sit in both.</p>
+
+<pre>2025-11-03, twelve 5-minute bars
+bar index   0    1    2    3    4    5  |   6    7    8    9   10   11
+time     09:30 ...                  09:55|10:00 ...              10:25
+         &lt;------ information window -----&gt;&lt;------ target window ----&gt;
+returns        r1   r2   r3   r4   r5    |  r6   r7   r8   r9  r10  r11
+               &lt;--- opening variance ---&gt; &lt;---- remaining variance ---&gt;</pre>
+
+<h3><code>compute_log_returns</code></h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$r_{d,t}=\log\!\left(\frac{P_{d,t}}{P_{d,t-1}}\right)$$</p>
+<p class="fnote">$P_{d,t}$ is the closing price of bar $t$ on day $d$, with $t$ counted from
+$0$ at 09:30. $r_{d,t}$ is the log return over that bar. The grouping is by symbol and day, so
+$r_{d,0}$ is undefined: there is no bar before the open. Using the natural logarithm makes
+returns add up across bars, which is what lets squared returns be summed into a variance.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; close prices, 2025-11-03</span>
+<pre>09:30  100.000000
+09:35  100.146695
+09:40  100.272792
+09:45  100.364233
+09:50  100.417963
+09:55  100.442899
+10:00  100.457101</pre></div>
+<div><span class="lab">out &mdash; log_return</span>
+<pre>09:30         NaN   &lt;- no earlier bar
+09:35  0.00146588
+09:40  0.00125833
+09:45  0.00091151
+09:50  0.00053520
+09:55  0.00024829
+10:00  0.00014139</pre>
+<p class="fnote">Check one row by hand: $\log(100.146695/100)=\log(1.00146695)=0.00146588$.</p></div>
+</div>
+</div>
+
+<h3><code>compute_opening_window_realized_variance</code> and <code>compute_remaining_window_realized_variance</code></h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$RV^{\text{open}}_d=\sum_{t\lt m} r_{d,t}^2 \qquad\qquad RV^{\text{remaining}}_d=\sum_{t\ge m} r_{d,t}^2$$</p>
+<p class="fnote">$m$ is <code>opening_window_bars</code>, which is 6. $RV^{\text{open}}_d$ is the
+opening realized variance and $RV^{\text{remaining}}_d$ is the target. The word "realized" means
+the variance is measured from returns that actually happened, not estimated from a model.
+Because $r_{d,0}$ is undefined, the opening sum runs over $t=1,\dots,m-1$ (five returns) after
+the code replaces the missing value with zero; the target sum runs over $t=m,\dots,n_d-1$ (six
+returns), where $n_d$ is the number of bars on day $d$. The two sets do not overlap.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; squared returns, 2025-11-03</span>
+<pre>opening   r1..r5:
+  0.00146588, 0.00125833, 0.00091151,
+  0.00053520, 0.00024829
+
+remaining r6..r11:
+  0.00014139, 0.00024820, 0.00053458,
+  0.00090912, 0.00125233, 0.00145492</pre></div>
+<div><span class="lab">out &mdash; two daily numbers</span>
+<pre>opening_realized_variance
+  2025-11-03   4.9111258221e-06
+  2025-11-04   4.9032916553e-06
+  2025-11-05   4.8954762190e-06
+
+target_remaining_realized_variance
+  2025-11-03   4.8789932098e-06   &lt;- what the model predicts
+  2025-11-04   4.8712515782e-06
+  2025-11-05   4.8635283577e-06</pre></div>
+</div>
+<p>The whole 55-day series of targets falls monotonically, day after day, from
+4.879e-06 to about 4.5e-06. Real intraday variance does not behave like that. This is the
+clearest single sign that the tracked file is a constructed sample, not market history.</p></div>
+
+<div class="box why"><span class="k">Why the target starts at bar six and not bar seven</span>
+<p>The return labelled $r_{d,6}$ spans the close of bar 5 (09:55) to the close of bar 6 (10:00).
+Bar 5's close is known at the cutoff; bar 6's close is not. So $r_{d,6}$ is genuinely unknown
+at forecast time and belongs in the target. Dropping it would throw away the first sixth of the
+thing being predicted, and including bar 5's own return would leak. The code's comment states
+exactly this reasoning.</p></div>
+
+<div class="box warn"><span class="k">Trap</span>
+<p>The opening calculation replaces the missing first return with zero
+(<code>.fillna(0.0)</code>) before squaring, while the target calculation does not, because it
+never meets a missing value. That asymmetry is correct but easy to "tidy" into a bug: adding
+<code>fillna</code> to the target would silently turn a genuinely absent return into a
+zero-variance contribution the day a dataset arrives with a gap in it.</p></div>
+
+<div class="box def"><span class="k">Guard</span>
+<p>Before summing, the target function counts bars per symbol and day and raises if any session
+has <code>opening_window_bars</code> or fewer. The message names every offending session, for
+example <code>AAPL/2025-12-24</code>, rather than returning an empty group that would look like
+a missing day later on.</p></div>
+
+<h2 id="sec4"><span class="sec-no">04</span>Predictors</h2>
+
+<h3><code>build_opening_feature_table</code> &mdash; three numbers from the first six bars</h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$\text{opening return}_d=\log\!\left(\frac{C_{d,m-1}}{O_{d,0}}\right),\qquad
+\text{opening range}_d=\frac{H_d-L_d}{O_{d,0}},\qquad
+\text{opening log volume}_d=\log(1+V_d)$$</p>
+<p class="fnote">$O_{d,0}$ is the opening price of the first bar, $C_{d,m-1}$ the closing price
+of the sixth bar, $H_d$ the highest high and $L_d$ the lowest low across those six bars, and
+$V_d$ their total share volume. The range is divided by the opening price so it is a fraction
+rather than a dollar amount, which keeps it comparable across price levels. The $1+$ inside the
+logarithm is there so that a zero-volume window gives zero instead of negative infinity.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; first six bars, 2025-11-03</span>
+<pre>first open   O = 99.95
+sixth close  C = 100.442899
+highest high H = 100.522899
+lowest low   L = 99.91
+total volume V = 60,399 shares</pre></div>
+<div><span class="lab">out &mdash; three predictors</span>
+<pre>opening_return      0.00491933
+opening_range       0.00613205
+opening_log_volume 11.00874438</pre>
+<p class="fnote">Check the range by hand:
+$(100.522899-99.91)/99.95=0.612899/99.95=0.00613205$.</p></div>
+</div>
+</div>
+
+<div class="box why"><span class="k">Why log volume and not volume share</span>
+<p>An earlier version of this project divided opening volume by the whole day's volume. That
+number cannot be computed at 09:55 because the rest of the day has not traded yet, so it leaked
+the future into a predictor. The code comment now says so directly: <em>"Total-day volume is
+unknown at the forecast cutoff."</em> Taking a logarithm of the opening volume alone keeps the
+predictor observable and compresses a five-figure share count onto a scale close to the other
+predictors, which helps an unregularised least-squares fit.</p></div>
+
+<h3><code>build_feature_table</code> &mdash; yesterday and the recent past</h3>
+
+<pre>merged["lag_1_remaining_realized_variance"] = merged.groupby("symbol")[
+    "target_remaining_realized_variance"
+].shift(1)
+
+def _lagged_rolling_mean(series: pd.Series, window: int) -&gt; pd.Series:
+    return series.shift(1).rolling(window=window, min_periods=window).mean()</pre>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$\text{lag}_d=RV^{\text{remaining}}_{d-1},\qquad
+\text{roll}^{(w)}_d=\frac{1}{w}\sum_{j=1}^{w}RV^{\text{remaining}}_{d-j}$$</p>
+<p class="fnote">$w$ is the window length, 5 or 10 trading days. The sum runs from $j=1$, never
+$j=0$, so today's own target is never inside its own predictor. In code that is the
+<code>.shift(1)</code> placed <em>before</em> <code>.rolling(...)</code>. Reversing those two calls
+would put today's value into the average and produce a model that appears to forecast almost
+perfectly.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; target series, 2025-11-03 onward</span>
+<pre>2025-11-03  4.8789932098e-06
+2025-11-04  4.8712515782e-06
+2025-11-05  4.8635283577e-06
+2025-11-06  4.8558234901e-06
+2025-11-07  4.8481369173e-06
+2025-11-10  4.8404685814e-06
+2025-11-11  4.8328184247e-06
+2025-11-12  4.8251863898e-06
+2025-11-13  4.8175724196e-06
+2025-11-14  4.8099764570e-06
+2025-11-17  4.8023984454e-06  &lt;- first modelling row</pre></div>
+<div><span class="lab">out &mdash; predictors for 2025-11-17</span>
+<pre>lag_1        4.8099764570e-06
+rolling_5d   4.8252044545e-06
+rolling_10d  4.8443755826e-06
+
+target       4.8023984454e-06</pre>
+<p class="fnote">Check the 5-day mean by hand: it is the average of 11-10 through 11-14, the
+five days ending the day before, and equals 4.8252044545e-06 exactly. Today's own value,
+4.8024e-06, is not in it.</p></div>
+</div>
+<p>The final <code>dropna</code> on the six required predictors is what removes the first ten
+days: the 10-day average needs ten prior observations. 55 raw days become 45 modelling rows.</p></div>
+
+<h2 id="sec5"><span class="sec-no">05</span>The modelling table</h2>
+
+<p><code>build_modeling_dataset_from_bars</code> is the one call that turns bars into a table
+ready for fitting. It computes the target, the opening variance, and the opening predictors,
+joins the opening variance onto the predictors, then hands both halves to
+<code>build_feature_table</code> and selects a fixed column list.</p>
+
+<div class="box def"><span class="k">What it does</span>
+<p><b>Input:</b> the prepared bar frame and the cutoff. <b>Output:</b> 45 rows by 10 columns,
+one row per trading day, sorted by symbol then date. <b>Role:</b> the only thing the modelling
+and evaluation code ever sees. Everything about timing has already been decided by the time this
+table exists.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io stack">
+<div><span class="lab">out &mdash; modeling_frame.iloc[0], the first usable day</span>
+<pre>symbol                                   AAPL
+trade_date                         2025-11-17
+target_remaining_realized_variance   4.8023984454e-06   <span class="c">&lt;- predicted, bars 6..11</span>
+opening_realized_variance            4.8336199180e-06   <span class="c">&lt;- known by 09:55</span>
+opening_return                       4.8803675488e-03   <span class="c">&lt;- known by 09:55</span>
+opening_range                        6.0833629371e-03   <span class="c">&lt;- known by 09:55</span>
+opening_log_volume                   1.1028563243e+01   <span class="c">&lt;- known by 09:55</span>
+lag_1_remaining_realized_variance    4.8099764570e-06   <span class="c">&lt;- yesterday</span>
+rolling_5d_remaining_realized_var    4.8252044545e-06   <span class="c">&lt;- previous 5 days</span>
+rolling_10d_remaining_realized_var   4.8443755826e-06   <span class="c">&lt;- previous 10 days</span></pre></div>
+</div>
+<p>Seven predictors, one target, 45 rows. Date coverage runs 2025-11-17 to 2026-01-16.</p></div>
+
+<div class="box flag"><span class="k">The weakness, stated honestly</span>
+<p>Look at the four variance columns above: they agree to three significant figures. On this
+tracked sample the opening variance, yesterday's target, the 5-day average and the 10-day
+average are all nearly the same number, and the target is a smooth continuation of them. Any
+linear combination can hit the target almost exactly. That is why the fit later looks
+impossibly good. It is a property of the sample file, not of the method.</p></div>
+
+<h2 id="sec6"><span class="sec-no">06</span>Three models</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Model</th><th>Prediction for day $d$</th><th>Why it is here</th></tr></thead>
+<tbody>
+<tr><td>Persistence</td><td>$\hat{y}_d=RV^{\text{remaining}}_{d-1}$</td><td>The hardest baseline to beat for anything that behaves like volatility. If a model cannot beat "same as yesterday", it has earned nothing.</td></tr>
+<tr><td>Rolling mean</td><td>$\hat{y}_d=\frac{1}{5}\sum_{j=1}^{5}RV^{\text{remaining}}_{d-j}$</td><td>Trades responsiveness for stability. Beats persistence when the series is noisy, loses when it trends.</td></tr>
+<tr><td>Linear</td><td>$\hat{y}_d=\beta_0+\sum_{k=1}^{7}\beta_k x_{d,k}$</td><td>The only fitted model. Seven predictors, one intercept.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The first two are one line each: they simply read a column that
+<code>build_feature_table</code> already lagged. All the leakage protection lives in the feature
+code, not the model code.</p>
+
+<h3><code>fit_linear_model</code> &mdash; least squares, written out</h3>
+
+<pre>ones_column = np.ones((feature_matrix.shape[0], 1), dtype=float)
+design_matrix = np.hstack([ones_column, feature_matrix])
+
+<span class="c"># Solve min ||X beta - y||_2 using least squares for stability.</span>
+fitted_parameters, _, _, _ = np.linalg.lstsq(design_matrix, target_vector, rcond=None)</pre>
+
+<div class="box def"><span class="k">The formula</span>
+<p>The objective, the condition that solves it, and the form the code computes:</p>
+<p>$$\hat{\beta}=\arg\min_{\beta}\;\lVert X\beta-y\rVert_2^{2}
+=\arg\min_{\beta}\;\sum_{i=1}^{n}\Big(y_i-\beta_0-\sum_{k=1}^{7}\beta_k x_{i,k}\Big)^{2}$$</p>
+<p>Setting the derivative with respect to each coefficient to zero says: <em>the leftover errors
+must be uncorrelated with every predictor and must average to zero</em>. Written out, that is the
+normal equations</p>
+<p>$$X^{\top}X\,\hat{\beta}=X^{\top}y$$</p>
+<p>which for a full-rank $X$ has the closed form</p>
+<p>$$\hat{\beta}=(X^{\top}X)^{-1}X^{\top}y$$</p>
+<p class="fnote">$y$ is the column of 20 target values in a training window, $X$ is the 20 by 8
+design matrix whose first column is all ones (the intercept) and whose other seven columns are
+the predictors, $n=20$ is the number of training rows, and $\hat{\beta}$ is the vector of eight
+fitted numbers. The code does <b>not</b> compute $(X^{\top}X)^{-1}$. It calls
+<code>np.linalg.lstsq</code>, which uses a singular value decomposition. That matters here: when
+predictors are nearly identical, as they are on this sample, $X^{\top}X$ is close to singular and
+inverting it directly would amplify numerical error, whereas the decomposition returns the
+smallest-length solution instead of blowing up.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io stack">
+<div><span class="lab">out &mdash; fitted coefficients, first walk-forward window (20 training days)</span>
+<pre>intercept                                  -4.203947e-08
+opening_realized_variance                   1.272678e-01
+opening_return                             -1.912192e-01
+opening_range                               1.538014e-01
+opening_log_volume                         -2.408805e-11
+lag_1_remaining_realized_variance           1.244019e-01
+rolling_5d_remaining_realized_variance      1.255858e-01
+rolling_10d_remaining_realized_variance     1.270869e-01</pre></div>
+</div>
+<p>Read these carefully: the four variance predictors receive nearly identical weights of about
+0.125 each, adding to roughly 0.5. That is the classic fingerprint of collinear predictors -
+the decomposition has spread one effect evenly across four columns because it cannot tell them
+apart. The weight on log volume is 2e-11, effectively zero. The coefficients are a numerical
+artefact of the sample, not an economic statement.</p></div>
+
+<div class="box warn"><span class="k">Trap</span>
+<p><code>predict_with_linear_model</code> refuses to run if the caller passes a predictor list in
+a different order from the fitted one. Without that check, reordering the columns would silently
+pair each coefficient with the wrong predictor and still return plausible-looking numbers.</p></div>
+
+<h2 id="sec7"><span class="sec-no">07</span>Walk-forward testing</h2>
+
+<h3><code>build_walk_forward_splits</code></h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>With $L$ the training window, $K$ the test window and $s$ the step, split $j$ (counting from
+zero) uses</p>
+<p>$$\text{train}_j=[\,js,\;js+L\,),\qquad \text{test}_j=[\,js+L,\;js+L+K\,)$$</p>
+<p>and splits are produced while $js+L+K\le n$.</p>
+<p class="fnote">$n$ is the number of rows in the modelling table, here 45. The command uses
+$L=20$, $K=5$, $s=5$. Because the step equals the test window, the test blocks tile the data end
+to end with no gaps and no overlaps. Because the step is smaller than the training window, the
+training blocks do overlap - the window rolls forward rather than growing.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; 45 rows, L=20, K=5, step=5</span>
+<pre>train  0..19   test 20..24
+train  5..24   test 25..29
+train 10..29   test 30..34
+train 15..34   test 35..39
+train 20..39   test 40..44</pre></div>
+<div><span class="lab">out &mdash; 5 splits, 25 forecast days</span>
+<pre>split 0 test dates:
+  2025-12-15
+  2025-12-16
+  2025-12-17
+  2025-12-18
+  2025-12-19</pre>
+<p class="fnote">Every test row sits strictly after every training row in its own split. Row 44
+is the last row, so the loop stops.</p></div>
+</div>
+<p>25 of the 45 modelling days receive an out-of-sample forecast. The first 20 never do: they are
+only ever training data.</p></div>
+
+<div class="box why"><span class="k">Why a rolling window rather than an expanding one</span>
+<p>Each fit uses exactly the 20 most recent days. An expanding window would use all history,
+which gives more data but assumes the relationship is stable forever. The rolling choice is the
+more conservative of the two and matches how a desk would refit a short-horizon model. It also
+keeps every split comparable, since each is fitted on the same amount of data.</p></div>
+
+<h3><code>evaluate_walk_forward_split</code> and the three loss measures</h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>For actual values $y_i$ and forecasts $h_i$ over $N$ test rows:</p>
+<p>$$\text{MAE}=\frac{1}{N}\sum_{i=1}^{N}\lvert y_i-h_i\rvert \qquad
+\text{RMSE}=\sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i-h_i)^2} \qquad
+\text{QLIKE}=\frac{1}{N}\sum_{i=1}^{N}\left(\log h_i+\frac{y_i}{h_i}\right)$$</p>
+<p class="fnote">MAE is the mean absolute error, RMSE the root mean squared error, and QLIKE the
+quasi-likelihood loss. All three are lower-is-better. MAE and RMSE are in variance units, which
+here are around $5\times10^{-6}$, so they look tiny no matter what. QLIKE is different: it
+compares the ratio $y_i/h_i$ rather than the difference, so a forecast that is half the truth is
+penalised the same whether the truth is large or small. That is why it is the standard choice for
+variance forecasts, whose scale changes by orders of magnitude. The code clips $h_i$ at
+$10^{-12}$ before taking the logarithm, because $\log 0$ is undefined and a linear model is free
+to predict a negative variance.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io stack">
+<div><span class="lab">out &mdash; split 0, five test days</span>
+<pre>                2025-12-15      2025-12-16      2025-12-17      2025-12-18      2025-12-19
+actual        4.6545224684e-6 4.6473087054e-6 4.6401116996e-6 4.6329313993e-6 4.6257677527e-6
+persistence   4.6617530409e-6 4.6545224684e-6 4.6473087054e-6 4.6401116996e-6 4.6329313993e-6
+rolling  5d   4.6762817899e-6 4.6690173891e-6 4.6617699025e-6 4.6545392778e-6 4.6473254627e-6
+linear        4.6545224589e-6 4.6473086890e-6 4.6401116761e-6 4.6329313669e-6 4.6257677107e-6</pre></div>
+</div>
+<p>The persistence row is the actual row shifted one column right, exactly as the definition
+says. The linear row matches the actual row to ten significant figures. Pooled over all five
+splits the command reports MAE of 7.03e-09 for persistence, 2.12e-08 for the rolling mean, and
+2.44e-14 for the linear model - six orders of magnitude better, which is a warning sign, not a
+result.</p></div>
+
+<div class="box flag"><span class="k">The weakness, stated honestly</span>
+<p>A linear MAE of 2.4e-14 is at the level of double-precision rounding. The correct reading is
+that the target on this file is an almost exact linear function of the predictors, so the split
+protocol is being tested rather than any forecasting skill. The project's own guide says the same
+thing. Treat the number as evidence that the pipeline is wired correctly and nothing more.</p></div>
+
+<h2 id="sec8"><span class="sec-no">08</span>The bridge</h2>
+
+<pre>predicted_variance = float(forecast_variance_by_trade_date[trade_date])
+if predicted_variance &lt; 0.0 or not np.isfinite(predicted_variance):
+    raise ValueError("Variance forecasts must be finite and non-negative.")
+predicted_volatility = float(np.sqrt(predicted_variance))</pre>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$\hat{\sigma}_d=\sqrt{\widehat{RV}^{\text{remaining}}_d}$$</p>
+<p class="fnote">$\widehat{RV}^{\text{remaining}}_d$ is the forecast variance for day $d$, in
+squared-return units, and $\hat{\sigma}_d$ is a volatility, in return units. The scheduler's input
+is a volatility, so the square root is not cosmetic: feeding a variance straight in would make the
+number roughly 400 times too small on this data and the schedule would collapse to equal slices.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; forecast for 2025-12-15</span>
+<pre>predicted variance
+  4.654522458871097e-06</pre></div>
+<div><span class="lab">out &mdash; volatility handed to the scheduler</span>
+<pre>predicted volatility
+  0.0021574342304856243
+
+MarketState(
+  average_daily_volume=64023.0,
+  daily_volatility=0.0021574342,
+  spread_bps=5.0)</pre></div>
+</div>
+<p>The order also arrives here: its benchmark price is the close of bar 5, 102.84289882 on
+2025-12-15, which is the last price known when the forecast is issued.</p></div>
+
+<div class="box why"><span class="k">Why the timing is arranged this way</span>
+<p><code>run_batch_experiment</code> only ever loops over dates that received an out-of-sample
+forecast. On each of those it splits the day into <code>information_bars</code> (0 to 5) and
+<code>execution_bars</code> (6 to 11), builds the order from the last information bar, and passes
+only the execution bars to the simulator. A reader auditing this project for look-ahead should
+check exactly these four lines, and they hold up.</p></div>
+
+<div class="box flag"><span class="k">The unit mismatch nobody should skip past</span>
+<p>The field is called <code>daily_volatility</code>, but the number put into it is the square root
+of a <em>30-minute</em> variance. It is a 30-minute volatility wearing a daily label. The
+consequence is visible in the next section: with a value of 0.00216 the urgency term becomes
+0.0108, and the Almgren-Chriss schedule is then indistinguishable from equal slices. The research
+half of this project changes the execution half by less than one basis point. The plumbing is
+right; the scaling is not, and the printed comparison should be read with that in mind. Converting
+properly would mean multiplying by $\sqrt{390/30}$, roughly 3.6, to reach a daily figure.</p></div>
+
+<h3><code>calibrate_market_state</code> &mdash; what it computes when nothing is overridden</h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$\sigma_{\text{bar}}=\operatorname{sd}\!\big(r_t\big),\qquad
+\sigma_{\text{daily}}=\sigma_{\text{bar}}\sqrt{\frac{\text{minutes per day}}{\text{minutes per bar}}}$$</p>
+<p class="fnote">$\sigma_{\text{bar}}$ is the sample standard deviation of the bar log returns
+(with the usual $n-1$ divisor), minutes per day is 390 (a 6.5-hour session), and minutes per bar
+is inferred from the timestamps, here 5. The square root of time scaling assumes returns in
+different bars are independent. The ratio $390/5=78$ is the number of bars in a day; the factor is
+$\sqrt{78}\approx8.83$. <b>Before the fix in section 12 this line used $\sqrt{390}$</b>, which is
+only correct if each bar is one minute long.</p></div>
+
+<div class="box def"><span class="k">Average daily volume</span>
+<p>$$\text{ADV}=\frac{1}{D}\sum_{d=1}^{D}\sum_{t}V_{d,t}$$</p>
+<p class="fnote">$V_{d,t}$ is the share volume of bar $t$ on day $d$ and $D$ the number of days
+present in the frame. Note it is the mean of per-day totals, not the sum of everything, which is
+what the multi-day test in <code>tests/calibration/</code> pins down. On the six execution bars of
+2025-12-15 the frame holds one day, so ADV comes out as that day's partial volume, 64,023 shares.
+Nothing in the schedules currently reads this field, so its scale does not affect any printed
+number.</p></div>
+
+<h2 id="sec9"><span class="sec-no">09</span>Three schedules</h2>
+
+<p>All three take a <code>ParentOrder</code> and return a small table of share counts. All three
+end with the same reconciliation step.</p>
+
+<h3><code>reconcile_integer_shares</code> &mdash; the rounding must land somewhere</h3>
+
+<pre>shares = np.array(raw_shares, dtype=int, copy=True)
+share_difference = int(target_total) - int(shares.sum())
+
+if share_difference != 0:
+    shares[-1] = int(shares[-1]) + share_difference
+
+return shares</pre>
+
+<div class="box gist"><span class="k">In plain words</span>
+<p>Whatever shares are left over after rounding get added to the last slice, so the schedule
+always adds up to exactly the order size.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; TWAP before reconciliation</span>
+<pre>10000 // 6 = 1666
+[1666, 1666, 1666, 1666, 1666, 1666]
+sum = 9996, short by 4</pre></div>
+<div><span class="lab">out &mdash; after reconciliation</span>
+<pre>[1666, 1666, 1666, 1666, 1666, 1670]
+sum = 10000   &lt;- residual on the last slice</pre></div>
+</div>
+<p>The <code>copy=True</code> matters: without it the function could write through to the caller's
+array and change a schedule that had already been handed out.</p></div>
+
+<h3><code>build_twap_schedule</code></h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$x_i=\left\lfloor \frac{Q}{N}\right\rfloor \text{ for } i=1..N-1,\qquad
+x_N=Q-(N-1)\left\lfloor \frac{Q}{N}\right\rfloor$$</p>
+<p class="fnote">$Q$ is the order size in shares (10,000), $N$ the number of slices (6), $x_i$ the
+shares in slice $i$, and $\lfloor\cdot\rfloor$ rounds down. TWAP stands for time-weighted average
+price: trade the same amount in each equal time interval. It ignores everything about the market
+and is the reference every other schedule is judged against.</p></div>
+
+<h3><code>build_vwap_schedule</code></h3>
+
+<div class="box def"><span class="k">The formula</span>
+<p>$$w_b=\frac{\bar{V}_b}{\sum_{b'}\bar{V}_{b'}},\qquad x_b=\operatorname{round}(w_b\,Q)$$</p>
+<p class="fnote">$b$ indexes an intraday bucket (here bars 6 through 11), $\bar{V}_b$ is that
+bucket's average volume across the days in the frame, $w_b$ its share of total volume, and $x_b$
+the shares allocated to it. VWAP stands for volume-weighted average price: trade more when the
+market trades more, so your own footprint stays a steadier fraction of activity. The weights sum
+to one by construction, and the function raises if total volume is not positive.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; execution-window volumes, 2025-12-15</span>
+<pre>bucket  volume
+   6      9786
+   7     10045
+   8     10479
+   9     10952
+  10     11313
+  11     11448
+  total  64023</pre></div>
+<div><span class="lab">out &mdash; weights and shares</span>
+<pre>bucket  weight   shares
+   6    0.152851   1529
+   7    0.156897   1569
+   8    0.163676   1637
+   9    0.171064   1711
+  10    0.176702   1767
+  11    0.178811   1787   &lt;- carries the residual
+                    10000</pre>
+<p class="fnote">Check one: $9786/64023=0.152851$, and $0.152851\times10000=1528.5$, which rounds
+to 1529.</p></div>
+</div>
+</div>
+
+<div class="box flag"><span class="k">This VWAP cannot be traded</span>
+<p>The weights are built from the volumes of the very bars being traded, which are not knowable
+when the order starts. This is an oracle benchmark - a best case that assumes perfect foresight of
+volume - and the project's guides label it as such. It exists to show how much a perfect volume
+forecast would be worth. On this data it is worth less than nothing: VWAP costs 24.29 basis points
+against TWAP's 23.48, because it puts more shares into the later bars, and on this constructed
+sample the price rises steadily through the window.</p></div>
+
+<h3><code>build_almgren_chriss_schedule</code> &mdash; the real optimisation</h3>
+
+<pre>normalized_time = np.linspace(0.0, 1.0, slice_count + 1)
+
+<span class="c"># urgency = lambda * sigma where lambda is risk aversion and sigma is daily vol.</span>
+urgency = max(order.risk_aversion * market_state.daily_volatility, MIN_URGENCY)
+
+<span class="c"># x(t) = sinh(urgency * (1 - t)) / sinh(urgency)</span>
+inventory_curve = np.sinh(urgency * (1.0 - normalized_time)) / np.sinh(urgency)
+
+inventory_shares = order.shares * inventory_curve
+raw_slice_shares = -np.diff(inventory_shares)</pre>
+
+<div class="box gist"><span class="k">In plain words</span>
+<p>Trading everything at once costs a lot in market impact. Trading slowly means holding shares
+you have not bought yet while the price wanders away from you. This schedule balances those two,
+and the more volatile the stock, the faster it trades.</p></div>
+
+<div class="box def"><span class="k">The formula</span>
+<p><b>Step 1, the objective.</b> Almgren and Chriss (2000) choose the path of remaining inventory
+$q(t)$ that minimises expected trading cost plus a penalty on the variance of that cost:</p>
+<p>$$\min_{q(\cdot)}\;\underbrace{\eta\int_0^{T}\dot{q}(t)^2\,dt}_{\text{impact of trading fast}}
+\;+\;\underbrace{\lambda\,\sigma^{2}\int_0^{T}q(t)^{2}\,dt}_{\text{risk of holding on}}$$</p>
+<p><b>Step 2, the condition that solves it.</b> Setting the first variation to zero says: <em>at
+every instant, the extra impact cost of speeding up must exactly equal the extra risk cost of
+still holding the position</em>. Written as an equation that is
+$\eta\,\ddot{q}(t)=\lambda\sigma^{2}q(t)$, a differential equation whose solutions are the
+hyperbolic sine and cosine.</p>
+<p><b>Step 3, the closed form this code implements.</b> With the horizon rescaled to
+$t\in[0,1]$ and both endpoints fixed ($q(0)=Q$, $q(1)=0$):</p>
+<p>$$q(t)=Q\,\frac{\sinh\!\big(\kappa(1-t)\big)}{\sinh(\kappa)},\qquad
+x_i=q\!\left(\frac{i-1}{N}\right)-q\!\left(\frac{i}{N}\right)$$</p>
+<p class="fnote">$q(t)$ is the shares still to buy at time $t$, $Q$ the order size, $N$ the number
+of slices, $x_i$ the shares traded in slice $i$, and $\sinh(z)=(e^{z}-e^{-z})/2$. $\eta$ is the
+temporary impact coefficient, $\lambda$ the risk aversion and $\sigma$ the volatility. $\kappa$ is
+the urgency: large $\kappa$ bends the curve so most shares are bought early, and $\kappa\to0$
+straightens it into a line, which is TWAP.</p>
+<p><b>What the code substitutes for $\kappa$.</b> The textbook value is
+$\kappa=\sqrt{\lambda\sigma^{2}/\eta}\,T$. This code instead sets</p>
+<p>$$\kappa=\max\!\big(\lambda\,\sigma,\;10^{-6}\big)$$</p>
+<p class="fnote">which is a stand-in, not the textbook quantity: there is no impact coefficient
+$\eta$ anywhere in the calibration, so the square root is dropped and $\eta$ is absorbed into the
+choice of $\lambda$. It preserves the qualitative behaviour - more volatility or more risk
+aversion means faster trading - but the units of $\lambda$ are no longer the units of a risk
+aversion in the original paper, and a given $\lambda$ has no interpretation transferable to another
+model. The floor of $10^{-6}$ exists because $\sinh(0)=0$ would divide by zero.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io">
+<div><span class="lab">in &mdash; as the project actually runs it</span>
+<pre>Q     = 10,000 shares
+N     = 6 slices
+lambda= 5.0
+sigma = 0.0021574342  (forecast, 2025-12-15)
+kappa = 5.0 x 0.0021574342
+      = 0.0107871712</pre></div>
+<div><span class="lab">out &mdash; shares per slice</span>
+<pre>slice  shares
+  0     1667
+  1     1667
+  2     1667
+  3     1667
+  4     1667
+  5     1665   &lt;- residual lands here
+        10000</pre>
+<p class="fnote">Almost exactly equal slices. At this urgency $\sinh$ is indistinguishable from a
+straight line, so the schedule is TWAP with rounding noise.</p></div>
+</div>
+<div class="io">
+<div><span class="lab">in &mdash; the same call with a realistic daily volatility</span>
+<pre>sigma = 0.30
+kappa = 5.0 x 0.30 = 1.5</pre></div>
+<div><span class="lab">out &mdash; now it front-loads</span>
+<pre>slice  shares
+  0     2477
+  1     2004
+  2     1657
+  3     1415
+  4     1261
+  5     1186
+        10000</pre>
+<p class="fnote">Check slice 0 by hand:
+$\big(\sinh(1.5)-\sinh(1.25)\big)/\sinh(1.5)=(2.129279-1.601919)/2.129279=0.247671$, and
+$0.247671\times10{,}000=2476.71$, which rounds to 2477.</p></div>
+</div>
+<p>The two boxes together are the honest picture: the model works, and the number currently fed
+into it is too small for the model to do anything.</p></div>
+
+<h2 id="sec10"><span class="sec-no">10</span>The fill simulator</h2>
+
+<div class="box def"><span class="k">The formula</span>
+<p>For slice $i$ with $q_i$ shares traded into a bar of volume $V_i$ at mid price $M_i$:</p>
+<p>$$s_i=\frac{q_i}{V_i},\qquad
+I_i=a+b\,s_i,\qquad
+P_i=M_i\left(1+\delta\,\frac{I_i}{10{,}000}\right)$$</p>
+<p>$$c_i=\delta\,(P_i-P^{\text{arr}})\,q_i,\qquad
+c^{\text{bps}}_i=\frac{c_i}{P^{\text{arr}}q_i}\times10{,}000,\qquad
+C^{\text{bps}}=\frac{\sum_i c_i}{\sum_i P^{\text{arr}}q_i}\times10{,}000$$</p>
+<p class="fnote">$s_i$ is the participation rate, the fraction of the bar's volume this slice
+represents. $I_i$ is the price concession in basis points, where a basis point is one
+hundredth of one percent; $a=2.0$ is a fixed cost paid on any trade and $b=25.0$ is how many extra
+basis points are paid for trading the entire bar's volume. $P_i$ is the price actually paid, worse
+than the mid price $M_i$. $\delta$ is $+1$ for a buy and $-1$ for a sell, which makes a buy fill
+above the mid and a sell fill below it, and makes the cost positive in both cases when the trade
+goes against you. $P^{\text{arr}}$ is the arrival price, the benchmark fixed at the moment the
+order was created. $c_i$ is the implementation shortfall in dollars - the gap between what was
+paid and what the benchmark would have cost - and $C^{\text{bps}}$ is the order-level cost,
+correctly weighted by each slice's notional value rather than averaged over slices.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io stack">
+<div><span class="lab">in and out &mdash; simulate_schedule(TWAP, 2025-12-15 execution bars), arrival 102.842899</span>
+<pre>slice shares  mid_price  bar_volume  volume_share  impact_bps  fill_price  cost_dollars  cost_bps
+  0    1666  102.857101      9786      0.170243     6.256080  102.921449      130.8653    7.6379
+  1    1666  102.882037     10045      0.165854     6.146341  102.945272      170.5540    9.9543
+  2    1666  102.935767     10479      0.158985     5.974616  102.997267      257.1775   15.0101
+  3    1666  103.027208     10952      0.152118     5.802958  103.086994      406.6627   23.7348
+  4    1666  103.153305     11313      0.147264     5.681605  103.211913      614.7769   35.8813
+  5    1670  103.300000     11448      0.145877     5.646925  103.358333      860.7746   50.1186   <span class="c">&lt;- most of the cost</span></pre></div>
+</div>
+<p>Check slice 0 end to end: $s=1666/9786=0.170243$; $I=2.0+25.0\times0.170243=6.256080$;
+$P=102.857101\times(1+0.0006256080)=102.921449$;
+$c=(102.921449-102.842899)\times1666=130.87$ dollars;
+$c^{\text{bps}}=130.865291/171{,}336.27\times10{,}000=7.64$.</p>
+<p>Notice what dominates. Impact falls across the window, from 6.26 to 5.65 basis points, because
+volume rises. But the cost per slice climbs from 7.6 to 50.1 basis points, because the price
+drifts up and away from the arrival benchmark. On this sample, drift is roughly eight times more
+important than impact, which is why every schedule lands near 23.5 basis points and why the one
+that trades earliest wins.</p></div>
+
+<div class="box why"><span class="k">Why the total is not the average of the slice figures</span>
+<p><code>summarize_execution</code> reports <code>total_cost_bps</code> as total dollars divided by
+total arrival notional, and separately reports <code>mean_cost_bps</code>, the plain average of the
+slice column, as a diagnostic. They agree here (23.733 against 23.723) only because the slices are
+nearly equal in size. Make the schedule genuinely uneven and the plain average would overweight the
+small slices and mislead. The notional-weighted figure is the one to quote.</p></div>
+
+<div class="box warn"><span class="k">Trap</span>
+<p>The simulator pairs schedule row $i$ with bar row $i$ by position, using
+<code>bars.head(len(schedule))</code>. There is no timestamp join. A schedule whose rows are not in
+chronological order, or a bar frame that was not sorted, would be silently mismatched. It raises
+only when there are fewer bars than slices, never when the two are merely misaligned.</p></div>
+
+<h2 id="sec11"><span class="sec-no">11</span>Reporting and what the command prints</h2>
+
+<p><code>summarize_experiment_batch</code> groups the per-day, per-schedule costs and computes the
+mean, median, standard deviation, 90th percentile and day count. It then adds a win rate against
+TWAP computed on date-matched pairs: the costs are pivoted so each date holds one column per
+schedule, rows with any missing value are dropped, and the win rate is the fraction of dates on
+which a schedule cost less than TWAP that same day.</p>
+
+<div class="box why"><span class="k">Why the comparison is pivoted first</span>
+<p>Comparing average costs across schedules would let a schedule win by being evaluated on easier
+days. Pivoting forces a like-for-like comparison on the same date before any averaging. TWAP's own
+win rate is set to zero by definition, since it cannot beat itself.</p></div>
+
+<div class="box data"><span class="k">Sample data</span>
+<div class="io stack">
+<div><span class="lab">out &mdash; uv run optimal-execution, complete</span>
+<pre>Offline Research Summary: splits=5, persistence_mae=7.034e-09, rolling5_mae=2.117e-08,
+  linear_mae=2.438e-14, linear_rmse=2.680e-14, linear_qlike=-11.296174
+Execution Bridge: the remaining-window variance forecast is square-rooted into volatility
+  after the opening cutoff, then passed to Almgren-Chriss.
+
+Single-Order Example (BUY 10,000 shares)
+- twap: total_cost_dollars=2440.81, total_cost_bps=23.73 bps, mean_cost_bps=23.72 bps,
+  average_fill_price=103.0870
+- almgren_chriss: total_cost_dollars=2439.20, total_cost_bps=23.72 bps, mean_cost_bps=23.72 bps,
+  average_fill_price=103.0868
+
+Cross-Day Experiment (mean cost in bps)
+- almgren_chriss: mean=23.47, median=23.47, std=0.15, p90=23.67, days=25, win_rate_vs_twap=1.00
+- twap:           mean=23.48, median=23.48, std=0.15, p90=23.68, days=25, win_rate_vs_twap=0.00
+- vwap:           mean=24.29, median=24.29, std=0.16, p90=24.49, days=25, win_rate_vs_twap=0.00</pre></div>
+</div>
+<p>The dollar signs are omitted above only so the surrounding page does not read them as
+mathematics; the command prints them. Almgren-Chriss beats TWAP on 25 days out of 25, which sounds
+decisive until you read the size of the win: 0.0155 basis points, or about 1.6 dollars on a
+1,028,429 dollar order. It wins every day because the sample is smooth and the direction is always
+the same, not because the margin is meaningful.</p></div>
+
+<h2 id="sec12"><span class="sec-no">12</span>Fixes applied</h2>
+
+<p>Four defects were found while reading and were fixed. All 49 tests pass afterwards, the command
+prints identical numbers, and the notebook still runs end to end.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Where</th><th>The defect</th><th>The fix</th><th>Effect</th></tr></thead>
+<tbody>
+<tr>
+<td><code>calibration/market_state.py</code></td>
+<td><span class="chip c-bug">units</span> The bar volatility was multiplied by $\sqrt{390}$, the number of <em>minutes</em> in a trading day. The bars are 5 minutes long, so this treated every bar as one minute and overstated daily volatility by $\sqrt{5}\approx2.236$.</td>
+<td>The bar length is now read from the timestamps (median gap between consecutive bars, so overnight gaps cannot skew it) and the scaling is $\sqrt{390/\text{minutes per bar}}=\sqrt{78}$. When a frame carries no timestamps, it falls back to <code>DEFAULT_BAR_DURATION_MINUTES</code>, which mirrors <code>execution.bar_duration_minutes</code> in <code>config.toml</code>.</td>
+<td>On the 2025-12-15 execution bars the estimate drops from 0.0097095 to 0.0043422. No printed number changes, because the command always supplies the forecast override, but the function is no longer wrong for anyone who calls it directly.</td>
+</tr>
+<tr>
+<td><code>research/evaluation.py</code></td>
+<td><span class="chip c-bug">alignment</span> <code>build_walk_forward_splits</code> sorted a private copy of the frame and returned positions into that copy, while <code>evaluate_walk_forward_split</code> applied those positions to the caller's frame with <code>.iloc</code>. If the caller's frame were ordered differently, every split would silently read the wrong rows.</td>
+<td>The internal re-sort is gone. The function now checks that <code>trade_date</code> is non-decreasing and raises a clear error otherwise, so the positions it returns unambiguously index the frame it was given.</td>
+<td>No behaviour change on any current caller, all of which pass a date-sorted frame. A silent wrong answer became a loud failure.</td>
+</tr>
+<tr>
+<td><code>cli.py</code></td>
+<td><span class="chip c-drop">robustness</span> The single-order section asked for <code>DEFAULT_SLICE_COUNT</code> slices unconditionally, while the cross-day path clamped it to the number of available bars. A day with fewer than six post-cutoff bars would crash inside the simulator.</td>
+<td>The single-order path now clamps the same way: <code>min(DEFAULT_SLICE_COUNT, len(execution_bars))</code>.</td>
+<td>None on the tracked data, which always has exactly six. It removes a crash waiting on a short session or a larger <code>opening_window_bars</code>.</td>
+</tr>
+<tr>
+<td><code>scripts/build_offline_research_pipeline.py</code></td>
+<td><span class="chip c-bug">index</span> The notebook's coverage table read <code>first_last["max"].iloc[0]</code> for the column named <code>last_timestamp_utc</code>. Since the rows are grouped by date in ascending order, that is the last bar of the <em>first</em> day, not of the dataset.</td>
+<td>Changed to <code>.iloc[-1]</code>, and the notebook was regenerated through the builder so the tracked notebook matches.</td>
+<td>The coverage table now reports 2026-01-16 15:25:00 rather than 2025-11-03 15:25:00, which agrees with <code>timestamp_bounds</code> in the metadata sidecar.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p class="fnote">Two further weaknesses were found and deliberately <b>not</b> changed, because
+neither can be tested from here and both are in the optional database path: the extraction query
+in <code>data/clickhouse.py</code> is assembled by string formatting rather than bound parameters,
+and <code>ClickHouseMarketDataClient</code> never closes its connection. Both are described in the
+traps section below rather than patched blind.</p>
+
+<h2 id="sec13"><span class="sec-no">13</span>Call graph</h2>
+
+<pre>main()                                              cli.py
+├── load_settings()                                 config.py
+├── _build_optional_clickhouse_client()             -&gt; None when host is empty
+├── load_market_data()                              data/loaders.py
+│   ├── get_dataset_spec()                          data/datasets.py
+│   └── validate_cache_pair()                       data/cache.py
+├── prepare_intraday_bars()                         data/bars.py
+├── _run_offline_research_summary()
+│   ├── build_modeling_dataset_from_bars()          research/dataset.py
+│   │   ├── compute_remaining_window_realized_variance()
+│   │   ├── compute_opening_window_realized_variance()
+│   │   │   └── compute_log_returns() -&gt; normalize_intraday_bars()
+│   │   ├── build_opening_feature_table()           research/features.py
+│   │   └── build_modeling_dataset() -&gt; build_feature_table()
+│   │                                    └── _lagged_rolling_mean()
+│   ├── build_walk_forward_splits()                 research/evaluation.py
+│   ├── evaluate_walk_forward_split()   (once per split, 5 times)
+│   │   ├── fit_linear_model()                      research/modeling.py
+│   │   ├── predict_with_persistence()
+│   │   ├── predict_with_rolling_mean()
+│   │   └── predict_with_linear_model()
+│   └── compute_mean_absolute_error() / _root_mean_squared_error() / _qlike()
+├── _build_parent_order_from_day()      arrival = close of the last information bar
+├── calibrate_market_state()            calibration/market_state.py
+│   ├── _estimate_realized_bar_volatility()
+│   ├── _infer_bar_duration_minutes()
+│   └── _build_trade_date_labels()
+├── build_twap_schedule() / build_almgren_chriss_schedule()
+│   └── reconcile_integer_shares()                  schedules/shares.py
+├── simulate_schedule() -&gt; summarize_execution()    simulator/, reporting/
+└── run_batch_experiment()              (once per forecast date, 25 times)
+    ├── _build_daily_schedule_map()
+    │   ├── calibrate_market_state()
+    │   ├── estimate_volume_profile()               calibration/volume_profile.py
+    │   └── build_twap / build_vwap / build_almgren_chriss
+    ├── simulate_schedule()             (3 schedules x 25 days = 75 simulations)
+    ├── summarize_execution()
+    └── summarize_experiment_batch()                reporting/evaluation.py
+        └── _compute_win_rate_vs_twap()</pre>
+
+<p class="fnote">Depth is what matters here: the research half is four levels deep and the
+execution half is two, and they touch at exactly one point, the square root in
+<code>run_batch_experiment</code>.</p>
+
+<h2 id="sec14"><span class="sec-no">14</span>Edge cases</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Situation</th><th>What would go wrong</th><th>What handles it</th></tr></thead>
+<tbody>
+<tr><td>A day has six bars or fewer with the cutoff at six</td><td>The target sum would be empty and the day would vanish without trace</td><td><code>compute_remaining_window_realized_variance</code> raises and names every offending symbol and date</td></tr>
+<tr><td>The first bar of a day has no earlier price</td><td><code>log(P/NaN)</code> propagates and poisons the daily sum</td><td>Returns are computed inside a per-day group, and the opening sum replaces the missing value with zero</td></tr>
+<tr><td>Fewer than 25 modelling rows</td><td>No walk-forward window would fit and the loop would produce nothing</td><td><code>_run_offline_research_summary</code> returns an explanatory line and an empty forecast map; <code>main</code> then raises <code>RuntimeError</code> rather than printing an empty table</td></tr>
+<tr><td>The linear model predicts a negative variance</td><td><code>log</code> of a negative number, and a square root of a negative number at the bridge</td><td>Forecasts are clipped at $10^{-12}$ in <code>evaluate_walk_forward_split</code>, QLIKE clips again, and <code>run_batch_experiment</code> rejects any non-finite or negative forecast</td></tr>
+<tr><td>Volatility is zero, so urgency is zero</td><td>$\sinh(0)=0$ in the denominator, dividing by zero</td><td><code>MIN_URGENCY = 1e-6</code> floors it, giving a near-linear schedule</td></tr>
+<tr><td>Rounded slice shares do not add to the order size</td><td>The simulated order would be a few shares wrong</td><td><code>reconcile_integer_shares</code> puts the residual on the last slice</td></tr>
+<tr><td>Total volume in a bucket profile is zero</td><td>Division by zero produces weights of NaN</td><td><code>estimate_volume_profile</code> raises before dividing</td></tr>
+<tr><td>Only one bar of price history</td><td>A sample standard deviation of one observation is undefined</td><td><code>_estimate_realized_bar_volatility</code> falls back to the absolute size of that single move, and returns zero when there are none</td></tr>
+<tr><td>Fewer bars than schedule slices</td><td>Slices would be dropped or paired with nothing</td><td><code>simulate_schedule</code> raises before touching the data</td></tr>
+<tr><td>Only one day of costs for a schedule</td><td>A sample standard deviation of one value is NaN and prints as "nan"</td><td><code>summarize_experiment_batch</code> fills it with 0.0</td></tr>
+<tr><td>A forecast date is not in the bar frame</td><td>A key error deep inside the loop</td><td><code>run_batch_experiment</code> intersects the two date sets first and raises if the intersection is empty</td></tr>
+<tr><td>The local Parquet file is missing or malformed and no database is configured</td><td>A confusing error from the Parquet reader</td><td><code>load_market_data</code> raises <code>FileNotFoundError</code> naming both required files and the folder it looked in</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sec15"><span class="sec-no">15</span>Traps worth knowing</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Pattern</th><th>What it does</th><th>The trap</th></tr></thead>
+<tbody>
+<tr><td><code>series.shift(1).rolling(w).mean()</code></td><td>Averages the previous $w$ observations, excluding today</td><td>Swap the two calls and today's value enters its own predictor. The error is invisible in the output and produces an apparently excellent model.</td></tr>
+<tr><td><code>groupby(["symbol","trade_date"]).cumcount()</code></td><td>Numbers the bars 0, 1, 2 within each day</td><td><code>prepare_intraday_bars</code> uses <code>trade_date</code> alone. Correct for one symbol, wrong the moment several are stacked.</td></tr>
+<tr><td><code>bars.head(len(schedule))</code></td><td>Pairs slices with bars by position</td><td>No timestamp join and no ordering check. Misalignment is silent.</td></tr>
+<tr><td><code>min(...)</code> on a dictionary of date strings</td><td>Picks the earliest forecast date</td><td>It works only because ISO dates sort the same as calendar dates. A different date format would quietly pick the wrong day.</td></tr>
+<tr><td><code>dict[date] = forecast</code> inside the split loop</td><td>Collects forecasts across splits</td><td>If the step were smaller than the test window the test blocks would overlap, and a later split would silently overwrite an earlier forecast for the same day. Safe only because step equals test size.</td></tr>
+<tr><td><code>np.array(raw_shares, dtype=int, copy=True)</code></td><td>Reconciles rounding on a private copy</td><td>Without <code>copy=True</code> the function would write through to the caller's array.</td></tr>
+<tr><td>f-string SQL in <code>build_stock_bars_query</code></td><td>Builds the extraction query</td><td>The symbol is pasted straight into the text. Safe today because symbols come from a frozen catalogue in <code>datasets.py</code>, but it is one careless call away from an injection. Left unchanged because it cannot be tested without a database.</td></tr>
+<tr><td><code>clickhouse_connect.get_client(...)</code> in <code>__init__</code></td><td>Opens the connection</td><td>Nothing ever closes it. There is no <code>close</code> method and no context manager, so a long-lived process that refreshes repeatedly leaks connections.</td></tr>
+<tr><td><code>except json.JSONDecodeError</code> in <code>cache.py</code></td><td>Turns unreadable metadata into a validation failure</td><td>This is the only caught exception in the whole package, and it is caught correctly: narrow, and it returns a described failure rather than swallowing the problem.</td></tr>
+<tr><td><code>Path(__file__).resolve().parents[2]</code></td><td>Finds the project root from <code>cli.py</code></td><td>It counts directory levels, so moving <code>cli.py</code> deeper breaks the path to <code>config.toml</code> silently. The count is correct today: <code>cli.py</code> to package to <code>src</code> to root.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sec16"><span class="sec-no">16</span>Limitations, stated honestly</h2>
+
+<div class="box flag"><span class="k">The sample data is constructed, not observed</span>
+<p>Prices trace a smooth curve within each day and the daily target variance falls monotonically
+across all 55 days. Volume is symmetric around the middle of the window. No real stock does this.
+Every performance number on this page describes the fixture, not a market.</p></div>
+
+<div class="box flag"><span class="k">The forecast does not really reach execution</span>
+<p>Because a 30-minute volatility is being passed into a field expecting a daily one, urgency lands
+around 0.011 and the Almgren-Chriss schedule is equal slices to within two shares. The research half
+of the project currently moves the execution half by about 0.016 basis points. The wiring is
+correct and the scaling is not.</p></div>
+
+<div class="box flag"><span class="k">The impact model has no memory and no depth</span>
+<p>Cost is a straight line in participation rate, $2.0+25.0\,s_i$ basis points, with no permanent
+impact, no spread crossing beyond that fixed 2 basis points, no queue position, no order book and
+no feedback from the trading onto later prices. Both coefficients are constants in
+<code>simulator/execution.py</code> rather than settings, and neither was estimated from anything.</p></div>
+
+<div class="box flag"><span class="k">The VWAP benchmark sees the future</span>
+<p>Its weights come from the volumes of the very bars it trades into. It is a ceiling on what a
+perfect volume forecast could achieve, not a schedule anyone could run.</p></div>
+
+<div class="box flag"><span class="k">One symbol, one hour, no cross-sectional structure</span>
+<p>The command runs AAPL alone. The other two tracked files exist but no code path compares them.
+There is no portfolio, no correlation between names, no risk model, and no notion that trading one
+stock might move another.</p></div>
+
+<div class="box flag"><span class="k">Twenty-five evaluation days is not a sample</span>
+<p>Five walk-forward splits over 25 forecast days on one instrument cannot separate skill from luck.
+The 100 percent win rate against TWAP is 25 near-identical days pointing the same way, and the
+margin is 0.0155 basis points.</p></div>
+
+<h2 id="sec17"><span class="sec-no">17</span>How to verify any of this yourself</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Check</th><th>How it works</th><th>What it catches</th></tr></thead>
+<tbody>
+<tr><td><code>uv run python -m pytest -q</code></td><td>49 tests: 4 data, 12 research, 5 calibration, 8 schedules, 3 simulator, 5 reporting, 3 command, plus configuration</td><td>Regressions in every module. It runs in about a second.</td></tr>
+<tr><td>The information cutoff</td><td>Open <code>run_batch_experiment</code> and read the four lines that build <code>information_bars</code> and <code>execution_bars</code>, then check that the order's arrival price is <code>information_bars.iloc[-1]["close"]</code></td><td>Any future bar reaching the order or the simulator</td></tr>
+<tr><td>The lag construction</td><td>Compute the 5-day mean by hand for one date and compare with the modelling table. For 2025-11-17 it is the mean of 2025-11-10 through 2025-11-14, and equals 4.8252044545e-06</td><td>An off-by-one that would include today in its own predictor</td></tr>
+<tr><td>Split disjointness</td><td><code>tests/research/test_walk_forward_evaluation.py</code> asserts that the largest training index is below the smallest test index and that the two sets do not intersect</td><td>Training on data that comes after the test block</td></tr>
+<tr><td>Share conservation</td><td>Every schedule test asserts <code>schedule["shares"].sum() == order.shares</code></td><td>Rounding that loses or invents shares</td></tr>
+<tr><td>Cost arithmetic</td><td>Recompute one slice by hand from the table in section 10; slice 0 gives 130.87 dollars and 7.64 basis points</td><td>A sign error or a misplaced factor of 10,000</td></tr>
+<tr><td>Data self-consistency</td><td>Compare <code>row_count</code> (660) with <code>trade_dates</code> (55) times <code>rows_per_day_max</code> (12) in the metadata sidecar</td><td>A truncated or partially rewritten Parquet file</td></tr>
+<tr><td>The notebook</td><td><code>uv run python -m nbconvert --to notebook --execute notebooks/offline_research_pipeline.ipynb --output /tmp/out.ipynb</code></td><td>An import or interface change that the tests miss. It runs top to bottom with no hidden state.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="foot">Companion documents in this repository: <code>README.md</code> for the project
+contract and runbook, <code>GUIDE_ROOT.md</code> for the reading order,
+<code>GUIDE_OVERVIEW.md</code> for the architecture summary, and
+<code>docs/user/demo_walkthrough.md</code> for the spoken version of this walkthrough. Every figure
+on this page came from running the code on <code>data/raw/sample_intraday_bars.parquet</code>.</p>
+
+</div>
+</body>
+</html>

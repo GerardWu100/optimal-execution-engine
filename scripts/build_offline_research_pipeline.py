@@ -1,7 +1,7 @@
 """Build the offline research teaching notebook deterministically."""
 
-from pathlib import Path
 import platform
+from pathlib import Path
 
 import nbformat as nbf
 
@@ -176,8 +176,10 @@ for symbol in sorted(raw_bars["symbol"].unique()):
             "trade_days": int(rows_per_day.size),
             "rows_per_day_min": int(rows_per_day.min()),
             "rows_per_day_max": int(rows_per_day.max()),
+            # first_last is grouped by trade_date in ascending order, so the
+            # dataset's last bar is the max of the LAST row, not the first row.
             "first_timestamp_utc": str(first_last["min"].iloc[0]),
-            "last_timestamp_utc": str(first_last["max"].iloc[0]),
+            "last_timestamp_utc": str(first_last["max"].iloc[-1]),
             "unique_spacing_minutes": sorted(
                 [float(value) for value in spacing_minutes.round(3).unique().tolist()]
             ),

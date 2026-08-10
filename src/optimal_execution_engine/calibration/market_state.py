@@ -5,9 +5,12 @@ import pandas as pd
 
 from optimal_execution_engine.types import MarketState
 
-
 MINUTES_PER_TRADING_DAY: float = 390.0
 DEFAULT_SPREAD_BPS: float = 5.0
+
+# Fallback bar length used only when the frame carries no usable timestamps.
+# It mirrors ``execution.bar_duration_minutes`` in config.toml.
+DEFAULT_BAR_DURATION_MINUTES: float = 5.0
 
 
 def _estimate_realized_bar_volatility(close_series: pd.Series) -> float:
@@ -34,6 +37,44 @@ def _estimate_realized_bar_volatility(close_series: pd.Series) -> float:
         return float(abs(log_returns.iloc[0]))
 
     return float(log_returns.std(ddof=1))
+
+
+def _infer_bar_duration_minutes(bars: pd.DataFrame) -> float:
+    """Infer how many minutes one bar spans, from the bar timestamps.
+
+    Parameters
+    ----------
+    bars
+        Input bars. A ``ts`` column is used when present.
+
+    Returns
+    -------
+    float
+        Median gap between consecutive bars in minutes. Falls back to
+        ``DEFAULT_BAR_DURATION_MINUTES`` when timestamps are missing or unusable.
+
+    Notes
+    -----
+    The median is used rather than the mean because a multi-day frame contains
+    large overnight gaps between the last bar of one day and the first bar of
+    the next. Those few large gaps would drag a mean upward, while the median
+    still reports the ordinary within-day bar length.
+    """
+    if "ts" not in bars.columns or len(bars) < 2:
+        return DEFAULT_BAR_DURATION_MINUTES
+
+    timestamps = pd.to_datetime(bars["ts"], utc=True, errors="coerce").dropna()
+    if len(timestamps) < 2:
+        return DEFAULT_BAR_DURATION_MINUTES
+
+    gaps_minutes = (
+        timestamps.sort_values().diff().dropna().dt.total_seconds().div(60.0)
+    )
+    positive_gaps = gaps_minutes.loc[gaps_minutes > 0.0]
+    if positive_gaps.empty:
+        return DEFAULT_BAR_DURATION_MINUTES
+
+    return float(positive_gaps.median())
 
 
 def _build_trade_date_labels(bars: pd.DataFrame) -> pd.Series:
@@ -83,10 +124,14 @@ def calibrate_market_state(
     # Estimate bar-frequency volatility first, then scale to one trading day.
     realized_bar_volatility = _estimate_realized_bar_volatility(close_series)
 
-    # daily_volatility = realized_bar_volatility * sqrt(minutes_per_day)
-    estimated_daily_volatility = realized_bar_volatility * np.sqrt(
-        MINUTES_PER_TRADING_DAY
-    )
+    # Scaling from one bar to one day needs the number of bars in a day, not the
+    # number of minutes. With 5-minute bars a trading day holds 390 / 5 = 78
+    # bars, so the square-root-of-time factor is sqrt(78), not sqrt(390).
+    bar_duration_minutes = _infer_bar_duration_minutes(bars)
+    bars_per_trading_day = MINUTES_PER_TRADING_DAY / bar_duration_minutes
+
+    # daily_volatility = realized_bar_volatility * sqrt(bars_per_trading_day)
+    estimated_daily_volatility = realized_bar_volatility * np.sqrt(bars_per_trading_day)
 
     daily_volatility = float(estimated_daily_volatility)
     if override_daily_volatility is not None:
