@@ -1,7 +1,6 @@
 """Tests for market-state calibration from bar data."""
 
 import pandas as pd
-
 from optimal_execution_engine.calibration.market_state import calibrate_market_state
 
 

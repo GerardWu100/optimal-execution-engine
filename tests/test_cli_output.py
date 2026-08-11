@@ -2,14 +2,13 @@
 
 import numpy as np
 import pandas as pd
-from pytest import MonkeyPatch
-
 from optimal_execution_engine.cli import (
     _format_cross_day_section,
     _format_single_order_section,
     run_batch_experiment,
 )
 from optimal_execution_engine.types import ParentOrder
+from pytest import MonkeyPatch
 
 
 def test_single_order_section_includes_schedule_names_and_units() -> None:

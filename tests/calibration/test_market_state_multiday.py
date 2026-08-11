@@ -1,7 +1,6 @@
 """Regression tests for multi-day market-state calibration behavior."""
 
 import pandas as pd
-
 from optimal_execution_engine.calibration.market_state import calibrate_market_state
 
 

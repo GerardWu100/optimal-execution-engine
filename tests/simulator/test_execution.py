@@ -1,7 +1,6 @@
 """Tests for execution-cost simulation."""
 
 import pandas as pd
-
 from optimal_execution_engine.simulator.execution import simulate_schedule
 
 

@@ -11,7 +11,6 @@ from optimal_execution_engine.research.realized_variance import (
     compute_remaining_window_realized_variance,
 )
 
-
 LINEAR_MODEL_FEATURE_COLUMNS: list[str] = [
     "opening_realized_variance",
     "opening_return",

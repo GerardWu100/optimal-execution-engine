@@ -2,7 +2,6 @@
 
 import pandas as pd
 
-
 BASE_IMPACT_BPS: float = 2.0
 VOLUME_SHARE_IMPACT_COEFFICIENT_BPS: float = 25.0
 
@@ -63,13 +62,13 @@ def simulate_schedule(
     signed_cost = side_multiplier * (
         simulation_frame["fill_price"] - float(arrival_price)
     )
-    simulation_frame["cost_dollars"] = (
-        signed_cost * simulation_frame["shares"].astype(float)
+    simulation_frame["cost_dollars"] = signed_cost * simulation_frame["shares"].astype(
+        float
     )
     simulation_frame["arrival_price"] = float(arrival_price)
-    simulation_frame["arrival_notional"] = (
-        float(arrival_price) * simulation_frame["shares"].astype(float)
-    )
+    simulation_frame["arrival_notional"] = float(arrival_price) * simulation_frame[
+        "shares"
+    ].astype(float)
     simulation_frame["cost_bps"] = (
         simulation_frame["cost_dollars"]
         / simulation_frame["arrival_notional"]

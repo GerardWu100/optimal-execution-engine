@@ -163,8 +163,7 @@ def compute_remaining_window_realized_variance(
     invalid_sessions = bar_counts.loc[bar_counts <= opening_window_bars]
     if not invalid_sessions.empty:
         invalid_keys = [
-            f"{symbol}/{trade_date}"
-            for symbol, trade_date in invalid_sessions.index
+            f"{symbol}/{trade_date}" for symbol, trade_date in invalid_sessions.index
         ]
         raise ValueError(
             "Each session must contain at least one bar after opening_window_bars; "
@@ -184,9 +183,5 @@ def compute_remaining_window_realized_variance(
             "squared_log_return"
         ]
         .sum()
-        .rename(
-            columns={
-                "squared_log_return": "target_remaining_realized_variance"
-            }
-        )
+        .rename(columns={"squared_log_return": "target_remaining_realized_variance"})
     )

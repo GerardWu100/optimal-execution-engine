@@ -2,8 +2,8 @@
 
 import os
 from pathlib import Path
-import tomllib
 
+import tomllib
 from dotenv import load_dotenv
 from pydantic import BaseModel
 

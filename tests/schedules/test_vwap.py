@@ -1,7 +1,6 @@
 """Tests for the VWAP-style scheduler."""
 
 import pandas as pd
-
 from optimal_execution_engine.schedules.vwap import build_vwap_schedule
 from optimal_execution_engine.types import ParentOrder
 

@@ -11,7 +11,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.cli import run_batch_experiment
 from optimal_execution_engine.config import load_settings
 from optimal_execution_engine.data.bars import prepare_intraday_bars
@@ -26,7 +25,6 @@ from optimal_execution_engine.research.evaluation import (
     compute_root_mean_squared_error,
     evaluate_walk_forward_split,
 )
-
 
 BLOG_DIR: Path = Path(__file__).resolve().parent
 PROJECT_ROOT: Path = BLOG_DIR.parent

@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.research.dataset import build_modeling_dataset
 from optimal_execution_engine.research.features import (
     build_feature_table,

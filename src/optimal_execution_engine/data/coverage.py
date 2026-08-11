@@ -4,7 +4,6 @@ from datetime import time
 
 import pandas as pd
 
-
 REGULAR_SESSION_START_UTC: time = time(hour=14, minute=30)
 REGULAR_SESSION_END_UTC: time = time(hour=20, minute=0)
 

@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.research.modeling import (
     fit_linear_model,
     predict_with_linear_model,

@@ -31,7 +31,9 @@ def _compute_win_rate_vs_twap(results: pd.DataFrame) -> dict[str, float]:
         return {}
 
     twap_costs = pivoted_costs["twap"]
-    comparable_costs = pivoted_costs.drop(columns=["twap"]).join(twap_costs, how="inner")
+    comparable_costs = pivoted_costs.drop(columns=["twap"]).join(
+        twap_costs, how="inner"
+    )
     comparable_costs = comparable_costs.dropna()
 
     if comparable_costs.empty:

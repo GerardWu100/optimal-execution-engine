@@ -1,7 +1,7 @@
 """Offline-first Parquet cache validation and persistence helpers."""
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +11,6 @@ from optimal_execution_engine.data.contracts import (
     CacheValidationResult,
 )
 from optimal_execution_engine.data.coverage import build_timestamp_coverage
-
 
 REQUIRED_METADATA_KEYS: set[str] = {
     "dataset_name",
@@ -87,7 +86,9 @@ def validate_cache_pair(parquet_path: Path) -> CacheValidationResult:
 
     if not REQUIRED_METADATA_KEYS.issubset(metadata):
         return _validation_failure(
-            f"Missing metadata keys in {metadata_path.name}", parquet_path, metadata_path
+            f"Missing metadata keys in {metadata_path.name}",
+            parquet_path,
+            metadata_path,
         )
 
     if not isinstance(metadata.get("row_count"), int) or metadata["row_count"] < 0:
@@ -100,7 +101,9 @@ def validate_cache_pair(parquet_path: Path) -> CacheValidationResult:
         or not metadata["bar_frequency"].strip()
     ):
         return _validation_failure(
-            f"Invalid bar_frequency in {metadata_path.name}", parquet_path, metadata_path
+            f"Invalid bar_frequency in {metadata_path.name}",
+            parquet_path,
+            metadata_path,
         )
 
     if (
@@ -183,7 +186,7 @@ def write_cache_dataset(
 
     normalized_metadata = dict(metadata)
     normalized_metadata["dataset_name"] = parquet_path.stem
-    normalized_metadata["row_count"] = int(len(frame))
+    normalized_metadata["row_count"] = len(frame)
 
     # Keep the description explicit so cache users understand dataset intent.
     normalized_metadata.setdefault("dataset_description", "")

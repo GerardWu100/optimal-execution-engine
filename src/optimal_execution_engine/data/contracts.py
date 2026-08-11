@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-
 PORTABLE_SOURCE_NOTE: str = (
     "This Parquet file is the portable offline source for local research and "
     "CLI demonstrations."

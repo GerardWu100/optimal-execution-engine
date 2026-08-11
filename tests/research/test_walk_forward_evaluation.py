@@ -2,12 +2,11 @@
 
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.research.evaluation import (
+    build_walk_forward_splits,
     compute_mean_absolute_error,
     compute_qlike,
     compute_root_mean_squared_error,
-    build_walk_forward_splits,
 )
 
 

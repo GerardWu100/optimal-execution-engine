@@ -1,7 +1,6 @@
 """Tests for estimating an intraday volume curve."""
 
 import pandas as pd
-
 from optimal_execution_engine.calibration.volume_profile import estimate_volume_profile
 
 

@@ -4,9 +4,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
-
 from optimal_execution_engine.data.cache import validate_cache_pair, write_cache_dataset
-
 
 EXPECTED_METADATA_KEYS: set[str] = {
     "dataset_name",

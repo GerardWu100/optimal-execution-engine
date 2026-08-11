@@ -1,7 +1,6 @@
 """Tests for cross-day schedule evaluation."""
 
 import pandas as pd
-
 from optimal_execution_engine.reporting.evaluation import summarize_experiment_batch
 
 

@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.reporting.summary import summarize_execution
 
 

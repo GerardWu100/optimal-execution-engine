@@ -6,7 +6,6 @@ import pandas as pd
 from optimal_execution_engine.schedules.shares import reconcile_integer_shares
 from optimal_execution_engine.types import MarketState, ParentOrder
 
-
 MIN_URGENCY: float = 1e-6
 
 

@@ -5,11 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from optimal_execution_engine.data.clickhouse import ClickHouseDataset
 from optimal_execution_engine.data.datasets import get_dataset_spec
 from optimal_execution_engine.data.loaders import load_market_data
-
 
 EXPECTED_PROVENANCE_KEYS: set[str] = {
     "dataset_name",

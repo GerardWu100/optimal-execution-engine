@@ -1,7 +1,6 @@
 """Regression tests for multi-day volume-profile construction."""
 
 import pandas as pd
-
 from optimal_execution_engine.calibration.volume_profile import estimate_volume_profile
 
 

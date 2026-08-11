@@ -1,7 +1,6 @@
 """Tests for the ClickHouse extraction adapter."""
 
 import pandas as pd
-
 from optimal_execution_engine.data.clickhouse import (
     build_stock_bars_query,
     summarize_timestamp_coverage,

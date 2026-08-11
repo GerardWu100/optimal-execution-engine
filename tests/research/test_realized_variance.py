@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-
 from optimal_execution_engine.research.realized_variance import (
     compute_daily_realized_variance,
     compute_log_returns,
