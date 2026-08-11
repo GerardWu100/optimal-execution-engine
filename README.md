@@ -1,146 +1,99 @@
 # Optimal Execution Engine
 
-Offline-first quantitative finance project that teaches a clean research backbone
-for volatility forecasting and a small execution bridge.
+An offline-first demo that forecasts short-horizon realized variance from
+intraday bars and feeds the forecast into an Almgren-Chriss optimal-execution
+schedule, to show how a research signal changes execution urgency.
 
-## Goal
+## What it does
 
-This repository is an interview-defensible, laptop-friendly project centered on
-one teaching story:
+The teaching story: `opening bars -> causal features -> remaining-window
+variance -> walk-forward forecast -> volatility -> later-window execution`.
 
-`opening bars -> causal features -> remaining-window variance -> walk-forward forecast -> volatility -> later-window execution`
+- **Research backbone.** Builds daily modeling tables from 5-minute intraday
+  bars. Target: remaining-window realized variance (sum of squared log
+  returns) after an opening information cutoff at 09:55 Eastern Time.
+  Features (all observable by the cutoff): opening-window realized variance,
+  opening return, opening range, log opening volume, lagged remaining-window
+  variance, and rolling 5-/10-day remaining-window variance means. Models:
+  persistence baseline, rolling-mean baseline, and an explicit least-squares
+  linear regression (NumPy). Evaluated with walk-forward time splits using
+  MAE, RMSE, and QLIKE loss.
+- **Execution bridge.** Takes the forecast variance, converts it to
+  volatility with $\sqrt{\text{predicted variance}}$, and passes it into an
+  [Almgren-Chriss](https://www.smallake.kr/wp-content/uploads/2016/03/optliq.pdf)
+  optimal-execution schedule as `override_daily_volatility`. Compares the
+  resulting implementation shortfall against a TWAP (Time-Weighted Average
+  Price) schedule and an oracle VWAP (Volume-Weighted Average Price)
+  benchmark. This is a simulation on historical bars, not a live or
+  paper-traded result.
 
-The notebook is the primary teaching artifact. The CLI is a compact companion
-that prints one research summary and one execution interpretation.
+Data sources: three tracked sample datasets in `data/raw/` (AAPL, MSFT,
+NVDA; 5-minute bars, 09:30-10:25 ET, 55 trading days each) — see
+[`data/raw/README.md`](data/raw/README.md). ClickHouse is optional and used
+only to refresh those Parquet files; normal runs never touch a database.
 
-## Project Contract
+## Requirements
 
-Clone the repo, run `uv sync`, and execute the notebook or CLI using only the
-tracked raw Parquet files in `data/raw/`. ClickHouse is needed only if you want
-to refresh the raw cache.
+- Python 3.13
+- No external service for normal use — the notebook and CLI run entirely
+  off the tracked Parquet files in `data/raw/`.
+- Optional, only for refreshing raw data: a ClickHouse server, configured
+  through `.env` (`CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_USER`,
+  `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_SECURE`, `CLICKHOUSE_VERIFY`).
 
-## Offline Data Boundary
-
-The only tracked raw-data boundary is `data/raw/`.
-
-Each dataset is packaged as:
-
-- one Parquet file: `<dataset>.parquet`
-- one metadata sidecar: `<dataset>.meta.json`
-
-Current tracked datasets:
-
-- `sample_intraday_bars` (AAPL)
-- `sample_intraday_bars_msft` (MSFT)
-- `sample_intraday_bars_nvda` (NVDA)
-
-All current tracked files contain 5-minute bars from 09:30 to 10:25 Eastern Time
-for 55 trading days. The demo observes the first six bars through 09:55 and
-forecasts the variance of returns ending from 10:00 through 10:25.
-
-## Research Backbone
-
-The research subpackage builds daily modeling tables from local raw Parquet.
-
-Primary target:
-
-- remaining-window realized variance from squared log returns after the opening
-  information cutoff.
-
-Primary features:
-
-- opening-window realized variance,
-- opening return,
-- opening range,
-- log opening volume,
-- lagged remaining-window variance,
-- rolling 5-day and 10-day remaining-window variance means.
-
-Every same-day feature is observable by 09:55. In particular, the feature set
-does not divide opening volume by later volume that is unknown at that time.
-
-Primary models:
-
-- persistence baseline,
-- rolling-mean baseline,
-- explicit linear regression (least squares with NumPy).
-
-Evaluation protocol:
-
-- walk-forward time splits,
-- Mean Absolute Error (MAE),
-- Root Mean Squared Error (RMSE),
-- QLIKE loss.
-
-## Execution Bridge
-
-The execution module stays intentionally small.
-
-- Forecast remaining-window variance from the research pipeline.
-- Convert variance to volatility with `sqrt(predicted_variance)`.
-- Start the order after the feature cutoff and pass the volatility into
-  Almgren-Chriss as `override_daily_volatility`.
-- Compare resulting implementation shortfall against Time-Weighted Average
-  Price (TWAP) and an oracle Volume-Weighted Average Price (VWAP) benchmark.
-
-This keeps execution as a consumer of research, not the entire product.
-
-## Quickstart
-
-Install dependencies:
+## Setup
 
 ```bash
 uv sync
 ```
 
-Run tests:
+## Usage
 
 ```bash
-uv run python -m pytest -q
+uv run optimal-execution                                          # CLI: research summary + execution interpretation
+uv run python -m pytest -q                                        # run tests
+uv run python scripts/build_offline_research_pipeline.py          # (re)build the deterministic notebook
+uv run python -m nbconvert --to notebook --execute \
+  notebooks/offline_research_pipeline.ipynb \
+  --output /tmp/offline_research_pipeline.executed.ipynb          # execute the notebook top-to-bottom
 ```
 
-Run CLI demo (offline by default):
+The notebook (`notebooks/offline_research_pipeline.ipynb`) is the primary
+walkthrough; the CLI is a compact companion that prints one research summary
+and one execution interpretation.
 
-```bash
-uv run optimal-execution
+## Configuration
+
+`config.toml`: `[cache].root_dir` (raw Parquet location),
+`[research].opening_window_bars` (bars observed before forecasting),
+`[execution].bar_duration_minutes`, and `[clickhouse]` (optional refresh
+connection — leave `host` empty to stay offline).
+
+## Layout
+
+```text
+src/optimal_execution_engine/data/         raw-data boundary, dataset specs, optional ClickHouse refresh
+src/optimal_execution_engine/research/     variance target, features, models, walk-forward evaluation
+src/optimal_execution_engine/calibration/  market-state and volume-profile calibration
+src/optimal_execution_engine/schedules/    TWAP, VWAP-style, and Almgren-Chriss schedule builders
+src/optimal_execution_engine/simulator/    slice-level execution and shortfall simulation
+src/optimal_execution_engine/reporting/    single-run and cross-day summaries
+data/raw/                                  tracked raw Parquet payload and metadata sidecars
+scripts/                                   deterministic notebook builder
+notebooks/                                 the teaching notebook
 ```
 
-Build deterministic notebook:
+Further reading: `GUIDE_ROOT.md` (root map), `GUIDE_OVERVIEW.md`
+(architecture), `GUIDE_PROJECT.md` (detailed project map), and the
+per-folder `GUIDE_*.md` files under `src/`, `scripts/`, `docs/`, and
+`tests/`.
 
-```bash
-uv run python scripts/build_offline_research_pipeline.py
-```
+## Output
 
-Execute notebook top-to-bottom:
+The CLI prints a research summary (forecast error metrics) and an execution
+interpretation (implementation shortfall vs. TWAP/VWAP) to stdout. The
+notebook writes its executed form under `outputs/`.
 
-```bash
-uv run python -m nbconvert --to notebook --execute notebooks/offline_research_pipeline.ipynb --output /tmp/offline_research_pipeline.executed.ipynb
-```
+## License
 
-## Optional ClickHouse Refresh
-
-ClickHouse is optional and one-time for refreshing raw Parquet payloads.
-
-- runtime demos and notebook execution do not require database access,
-- refresh logic lives behind explicit loader/client usage,
-- refreshed files must still be written back to `data/raw/`.
-
-## Interview Framing
-
-How to explain this quickly:
-
-1. Start with the offline contract (`data/raw/` only).
-2. Walk through the feature cutoff and later-window target with no overlap.
-3. Show walk-forward evaluation with simple interpretable models.
-4. Show how square-rooted variance informs post-cutoff execution urgency.
-
-## Repository Navigation
-
-- high-level architecture: `GUIDE_OVERVIEW.md`
-- root map and reading order: `GUIDE_ROOT.md`
-- detailed project map: `GUIDE_PROJECT.md`
-- package guide: `src/GUIDE_src.md`
-- scripts guide: `scripts/GUIDE_scripts.md`
-- docs guide: `docs/GUIDE_docs.md`
-- tests guide: `tests/GUIDE_tests.md`
-- notebook notes: `notebooks/README.md`
+All rights reserved. See [LICENSE](LICENSE).
