@@ -6,11 +6,11 @@ image: images/cover-optimal-execution.png
 categories: ["Quantitative Research", "Capital Markets"]
 ---
 
-A forecast is only usable if every input exists when the forecast is issued. Its output must also have the units expected by the next model. The first version of this project failed both tests. The opening variance feature covered all 12 tracked bars, so it equaled the target. The resulting variance forecast then crossed an interface documented as volatility without a square root.
+A forecast is usable only if every input exists when the forecast is issued. The next model must also receive the units it expects. The first version of this project failed both checks. The opening variance feature covered all 12 tracked bars, so it equaled the target. The variance forecast then crossed an interface documented as volatility without a square root.
 
-The repaired pipeline makes one decision at 09:55 Eastern Time. Six five-minute bars are known by then. The model forecasts variance over the next six bars, and the simulated parent order starts at 10:00. That simple timeline fixes the causal error. A second correction converts forecast variance into volatility before it affects execution urgency.
+The repaired pipeline makes one decision at 09:55 Eastern Time. Six five-minute bars are known by then. The model forecasts variance over the next six bars, and the simulated parent order starts at 10:00. This timeline fixes the causal error. The pipeline also converts forecast variance into volatility before changing execution urgency.
 
-The corrected result needs an honest warning: the linear model still posts a Mean Absolute Error (MAE) of $2.44\times10^{-14}$. That is not evidence of market forecasting skill. The tracked fixture is deterministic and smooth enough that opening and later variance have a correlation of $0.999999998$ even though they no longer overlap.
+One number still looks absurdly good. The linear model posts a Mean Absolute Error (MAE) of $2.44\times10^{-14}$. That is not evidence of market forecasting skill. The tracked fixture is deterministic and smooth enough that opening and later variance have a correlation of $0.999999998$ even though they no longer overlap.
 
 ## The decision timeline
 
@@ -107,7 +107,7 @@ The points do not sit on the equality line, so the feature no longer contains th
 
 Ten prior targets are required for the longest rolling feature, leaving 45 modeling rows. Each walk-forward split trains on 20 consecutive rows and tests on the next five. The window advances by five rows, producing five non-overlapping test blocks and 25 out-of-sample forecasts.
 
-The three models are deliberately small:
+I kept the model set small:
 
 1. Persistence predicts $\widehat{RV}^{\text{rem}}_d=L_{d,1}$.
 2. The rolling baseline predicts $\widehat{RV}^{\text{rem}}_d=M_{d,5}$.
@@ -151,7 +151,7 @@ Predictions are floored at $10^{-12}$ before QLIKE so its logarithm and division
 
 ![Walk-forward model errors on a logarithmic scale](images/02_model_error_comparison.png)
 
-The logarithmic axis shows the large numerical gap. The right interpretation is narrow: a linear combination of highly collinear synthetic features can extrapolate this fixture almost exactly. There are only 20 training observations for seven predictors plus an intercept, no realistic noise, and no independent market sample. The result verifies plumbing. It does not validate a trading model.
+The logarithmic axis shows the large numerical gap. The interpretation is narrow. A linear combination of highly collinear synthetic features can extrapolate this fixture almost exactly. There are only 20 training observations for seven predictors plus an intercept, no realistic noise, and no independent market sample. The result verifies the calculation path. It does not validate a trading model.
 
 ## Variance is not volatility
 
@@ -229,7 +229,7 @@ Almgren-Chriss beats TWAP by about $0.016$ basis points on average in this simul
 
 Bertsimas and Lo frame execution as a dynamic optimization problem under price impact and information arrival.[^4] This project does not solve that full problem. It has no order book, spread dynamics, queue position, temporary-versus-permanent impact calibration, or venue choice.
 
-## What the repair establishes
+## What the repair establishes, and nothing more
 
 The corrected code now enforces one coherent chain:
 
@@ -244,7 +244,7 @@ bars ending by 09:55
 
 That chain fixes the two material defects and two related issues uncovered during the trace. It does not rescue the empirical claim. A useful next experiment needs full-session market data, a realistic noise structure, substantially more training history, and an execution model whose impact parameters are estimated rather than chosen constants.
 
-The main lesson is procedural. A chronological train-test split cannot repair a feature whose timestamp crosses the decision boundary. Passing tests cannot repair a unit mismatch between modules. Trace time and units before interpreting a metric.
+My conclusion is procedural. A chronological train-test split cannot repair a feature whose timestamp crosses the decision boundary. Passing tests cannot repair a unit mismatch between modules. I trace time and units before I trust a metric.
 
 ## References
 

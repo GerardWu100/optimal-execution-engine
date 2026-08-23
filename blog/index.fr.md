@@ -6,11 +6,11 @@ image: images/cover-optimal-execution.png
 categories: ["Quantitative Research", "Capital Markets"]
 ---
 
-Une prévision n'est exploitable que si chaque entrée existe au moment où elle est calculée. Sa sortie doit aussi avoir l'unité attendue par le modèle suivant. La première version de ce projet échouait sur ces deux points. La variable de variance d'ouverture couvrait les 12 barres suivies et se confondait donc avec la cible. La prévision de variance franchissait ensuite une interface documentée comme une volatilité, sans passer par une racine carrée.
+Une prévision n'est exploitable que si chaque entrée existe au moment où elle est calculée. Le modèle suivant doit aussi recevoir l'unité attendue. La première version de ce projet échouait sur ces deux points. La variable de variance d'ouverture couvrait les 12 barres suivies et se confondait donc avec la cible. La prévision de variance franchissait ensuite une interface documentée comme une volatilité, sans passer par une racine carrée.
 
-La chaîne corrigée prend une décision à 9 h 55, heure de l'Est. Six barres de cinq minutes sont alors connues. Le modèle prévoit la variance des six barres suivantes, puis l'ordre parent simulé commence à 10 h. Cette chronologie sépare l'information de la cible. Une seconde correction convertit la variance prévue en volatilité avant de modifier l'urgence d'exécution.
+La chaîne corrigée prend une décision à 9 h 55, heure de l'Est. Six barres de cinq minutes sont alors connues. Le modèle prévoit la variance des six barres suivantes, puis l'ordre parent simulé commence à 10 h. Cette chronologie sépare l'information de la cible. La chaîne convertit aussi la variance prévue en volatilité avant de modifier l'urgence d'exécution.
 
-Le résultat demande pourtant une mise en garde : l'erreur absolue moyenne, ou Mean Absolute Error (MAE), du modèle linéaire reste égale à $2.44\times10^{-14}$. Ce chiffre ne mesure pas une capacité à prévoir le marché. Le jeu de démonstration est si déterministe et lisse que la corrélation entre la variance d'ouverture et celle de la fenêtre suivante atteint $0.999999998$, même sans chevauchement.
+Un chiffre reste absurdement bon. L'erreur absolue moyenne, ou Mean Absolute Error (MAE), du modèle linéaire est égale à $2.44\times10^{-14}$. Ce chiffre ne mesure pas une capacité à prévoir le marché. Le jeu de démonstration est si déterministe et lisse que la corrélation entre la variance d'ouverture et celle de la fenêtre suivante atteint $0.999999998$, même sans chevauchement.
 
 ## La chronologie de la décision
 
@@ -107,7 +107,7 @@ Les points ne sont plus sur la droite d'égalité : la variable ne contient donc
 
 La plus longue moyenne mobile demande dix cibles antérieures, ce qui laisse 45 lignes de modélisation. Chaque fenêtre walk-forward s'ajuste sur 20 lignes consécutives et teste les cinq suivantes. Elle avance ensuite de cinq lignes. On obtient cinq blocs de test sans chevauchement, soit 25 prévisions hors échantillon.
 
-Les trois modèles restent volontairement simples :
+J'ai gardé trois modèles simples :
 
 1. La persistance prévoit $\widehat{RV}^{\text{rem}}_d=L_{d,1}$.
 2. La moyenne mobile prévoit $\widehat{RV}^{\text{rem}}_d=M_{d,5}$.
@@ -151,7 +151,7 @@ Les prévisions sont bornées par le bas à $10^{-12}$ avant le calcul de QLIKE 
 
 ![Erreurs walk-forward des modèles sur une échelle logarithmique](images/02_model_error_comparison.png)
 
-L'échelle logarithmique rend visible le grand écart numérique. L'interprétation doit rester étroite : une combinaison linéaire de variables synthétiques très colinéaires extrapole presque exactement ce jeu de données. Chaque ajustement ne dispose que de 20 observations pour sept variables et une constante. L'échantillon ne contient ni bruit réaliste ni marché indépendant. Le résultat vérifie la chaîne de calcul, pas un modèle de trading.
+L'échelle logarithmique rend visible le grand écart numérique. L'interprétation doit rester étroite. Une combinaison linéaire de variables synthétiques très colinéaires extrapole presque exactement ce jeu de données. Chaque ajustement ne dispose que de 20 observations pour sept variables et une constante. L'échantillon ne contient ni bruit réaliste ni marché indépendant. Le résultat vérifie la chaîne de calcul, pas un modèle de trading.
 
 ## La variance n'est pas la volatilité
 
@@ -229,7 +229,7 @@ Almgren-Chriss bat TWAP d'environ $0.016$ point de base en moyenne dans ce simul
 
 Bertsimas et Lo formulent l'exécution comme un problème de contrôle dynamique soumis à l'impact de marché et à l'arrivée d'information.[^4] Le projet ne résout pas ce problème complet. Il ne modélise ni carnet d'ordres, ni dynamique du spread, ni position dans la file, ni calibration séparée des impacts temporaire et permanent, ni choix de place de négociation.
 
-## Ce que la réparation établit
+## Ce que la réparation établit, sans aller plus loin
 
 Le code impose maintenant une seule chaîne cohérente :
 
@@ -244,7 +244,7 @@ bars ending by 09:55
 
 Cette chaîne corrige les deux défauts matériels et deux problèmes connexes révélés par l'audit. Elle ne sauve pas la conclusion empirique. Une expérience crédible demanderait des données de séance complète, une structure de bruit réaliste, bien plus d'historique et des paramètres d'impact estimés plutôt que choisis.
 
-La leçon tient à la méthode. Un découpage chronologique entre entraînement et test ne peut pas réparer une variable dont l'horodatage franchit la frontière de décision. Des tests réussis ne corrigent pas une incohérence d'unité entre deux modules. Il faut tracer le temps et les unités avant d'interpréter une mesure de performance.
+Ma conclusion tient à la méthode. Un découpage chronologique entre entraînement et test ne peut pas réparer une variable dont l'horodatage franchit la frontière de décision. Des tests réussis ne corrigent pas une incohérence d'unité entre deux modules. Je retrace le temps et les unités avant de croire une mesure de performance.
 
 ## Références
 
