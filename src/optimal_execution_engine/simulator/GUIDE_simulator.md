@@ -28,6 +28,13 @@ Symbols:
 Important behavior:
 
 - raises when bars are fewer than schedule rows,
+- raises when a slice trades shares in a bar whose volume is not positive. A halted
+  or empty bar would otherwise divide by zero and give that slice infinite impact,
+  which then spreads through every aggregate cost number. Pricing the halt at zero
+  impact would make it look like the cheapest bar of the day, and dropping the slice
+  would simulate a smaller order than the one requested. Both are silently wrong, so
+  the caller has to re-plan the schedule over tradeable bars instead,
+- allows a slice that trades zero shares in a halted bar, and gives it zero cost,
 - aligns bars to the first `len(schedule)` rows,
 - returns mid price, volume share, impact, fill price, arrival notional, dollar
   cost, and basis-point cost.
@@ -36,3 +43,5 @@ Important behavior:
 
 - 2026-04-20: Updated package paths after namespace refactor; simulator logic and
   intent remain intentionally simple and transparent.
+- 2026-08-24: Added the non-positive bar volume guard so one halted bar can no longer
+  produce infinite impact and poison aggregate cost metrics.
