@@ -93,7 +93,3 @@ per-folder `GUIDE_*.md` files under `src/`, `scripts/`, `docs/`, and
 The CLI prints a research summary (forecast error metrics) and an execution
 interpretation (implementation shortfall vs. TWAP/VWAP) to stdout. The
 notebook writes its executed form under `outputs/`.
-
-## License
-
-All rights reserved. See [LICENSE](LICENSE).
