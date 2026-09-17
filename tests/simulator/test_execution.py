@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-
 from optimal_execution_engine.simulator.execution import simulate_schedule
 
 
@@ -25,9 +24,7 @@ def test_halted_bar_with_shares_raises() -> None:
     bars = pd.DataFrame({"close": [100.0, 100.2], "volume": [2000, 0]})
 
     with pytest.raises(ValueError, match="positive volume"):
-        simulate_schedule(
-            schedule=schedule, bars=bars, arrival_price=100.0, side="BUY"
-        )
+        simulate_schedule(schedule=schedule, bars=bars, arrival_price=100.0, side="BUY")
 
 
 def test_missing_bar_volume_raises() -> None:
@@ -36,9 +33,7 @@ def test_missing_bar_volume_raises() -> None:
     bars = pd.DataFrame({"close": [100.0, 100.2], "volume": [2000, float("nan")]})
 
     with pytest.raises(ValueError, match="positive volume"):
-        simulate_schedule(
-            schedule=schedule, bars=bars, arrival_price=100.0, side="BUY"
-        )
+        simulate_schedule(schedule=schedule, bars=bars, arrival_price=100.0, side="BUY")
 
 
 def test_zero_share_slice_in_halted_bar_costs_nothing() -> None:

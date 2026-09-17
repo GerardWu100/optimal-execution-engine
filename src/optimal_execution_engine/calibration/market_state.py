@@ -67,9 +67,7 @@ def _infer_bar_duration_minutes(bars: pd.DataFrame) -> float:
     if len(timestamps) < 2:
         return DEFAULT_BAR_DURATION_MINUTES
 
-    gaps_minutes = (
-        timestamps.sort_values().diff().dropna().dt.total_seconds().div(60.0)
-    )
+    gaps_minutes = timestamps.sort_values().diff().dropna().dt.total_seconds().div(60.0)
     positive_gaps = gaps_minutes.loc[gaps_minutes > 0.0]
     if positive_gaps.empty:
         return DEFAULT_BAR_DURATION_MINUTES
